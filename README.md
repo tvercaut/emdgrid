@@ -24,9 +24,11 @@ ctest --test-dir build --output-on-failure
 
 ## Python bindings
 
-The CMake build also produces a `pyemdgrid` extension module through
-`bindings/python`.
+Python bindings are available through `bindings/python` and can be enabled
+explicitly during configuration.
 
 ```bash
+cmake -S . -B build -DEMDGRID_BUILD_PYTHON_BINDINGS=ON
+cmake --build build
 PYTHONPATH=build/bindings/python python3 -c "import pyemdgrid; print(pyemdgrid.version())"
 ```

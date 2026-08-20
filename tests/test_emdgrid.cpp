@@ -4,7 +4,9 @@
 #include "emdgrid/emdgrid.hpp"
 
 int main() {
-  if (emdgrid::add(2, 3) != 5) {
+  constexpr int kExpectedSum = 5;
+
+  if (emdgrid::add(2, 3) != kExpectedSum) {
     return EXIT_FAILURE;
   }
 

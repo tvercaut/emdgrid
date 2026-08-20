@@ -12,7 +12,7 @@ else()
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-find_program(CLANG_TIDY_EXE NAMES clang-tidy PATHS /opt/homebrew/opt/llvm/bin/)
+find_program(CLANG_TIDY_EXE NAMES clang-tidy)
 if(CLANG_TIDY_EXE)
   set(CMAKE_CXX_CLANG_TIDY
       ${CLANG_TIDY_EXE};
@@ -30,7 +30,7 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>)
 target_compile_features(emdgrid PUBLIC cxx_std_17)
 
-option(EMDGRID_BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
+option(EMDGRID_BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
 
 include(CTest)
 add_subdirectory(example)
