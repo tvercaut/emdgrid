@@ -26,10 +26,13 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>)
 target_compile_features(emdgrid PUBLIC cxx_std_17)
 
+option(EMDGRID_BUILD_EXAMPLES "Build example targets" ON)
 option(EMDGRID_BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
 
 include(CTest)
-add_subdirectory(example)
+if(EMDGRID_BUILD_EXAMPLES)
+  add_subdirectory(example)
+endif()
 
 if(BUILD_TESTING)
   add_subdirectory(tests)
