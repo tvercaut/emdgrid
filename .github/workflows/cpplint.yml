@@ -3,6 +3,10 @@
 
 name: cpplint
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
   cpplint:
     runs-on: ubuntu-latest
