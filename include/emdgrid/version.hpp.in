@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+namespace emdgrid::detail {
+
+inline constexpr std::string_view version = "@EMDGRID_GIT_VERSION@";
+
+}  // namespace emdgrid::detail

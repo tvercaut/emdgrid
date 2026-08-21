@@ -1,7 +1,8 @@
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/version.hpp"
 
 namespace emdgrid {
 
-std::string_view version() noexcept { return EMDGRID_VERSION; }
+std::string_view version() noexcept { return detail::version; }
 
 }  // namespace emdgrid
