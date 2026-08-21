@@ -11,16 +11,13 @@
 
 namespace emdgrid {
 
-[[nodiscard]] constexpr int add(int lhs, int rhs) noexcept { return lhs + rhs; }
-
 template <std::size_t Dim>
+  requires(Dim > 0)
 class GridLayout {
  public:
-  static_assert(Dim > 0, "GridLayout requires at least one dimension.");
-
-  using NodeId = std::size_t;
+  using NodeId = std::ptrdiff_t;
   using Shape = std::array<std::size_t, Dim>;
-  using Coordinates = Shape;
+  using Coordinates = std::array<std::ptrdiff_t, Dim>;
 
   explicit GridLayout(Shape shape) : m_shape(shape) {}
 
@@ -48,26 +45,28 @@ class GridLayout {
   }
 
   [[nodiscard]] NodeId node(Coordinates coord) const {
-    std::size_t index = 0;
+    NodeId index = 0;
     for (std::size_t axis = 0; axis < Dim; ++axis) {
-      if (coord[axis] >= m_shape[axis]) {
+      const NodeId extent = static_cast<NodeId>(m_shape[axis]);
+      if (coord[axis] < 0 || coord[axis] >= extent) {
         throw std::out_of_range("grid coordinate out of range");
       }
-      index *= m_shape[axis];
+      index *= extent;
       index += coord[axis];
     }
     return index;
   }
 
   [[nodiscard]] Coordinates coordinates(NodeId node) const {
-    if (node >= node_count()) {
+    if (node < 0 || static_cast<std::size_t>(node) >= node_count()) {
       throw std::out_of_range("grid node out of range");
     }
 
     Coordinates coord{};
     for (std::size_t axis = Dim; axis-- > 0;) {
-      coord[axis] = node % m_shape[axis];
-      node /= m_shape[axis];
+      const NodeId extent = static_cast<NodeId>(m_shape[axis]);
+      coord[axis] = node % extent;
+      node /= extent;
     }
     return coord;
   }
@@ -82,7 +81,7 @@ class GridLayout {
         --previous[axis];
         result.push_back(this->node(previous));
       }
-      if (coord[axis] + 1 < m_shape[axis]) {
+      if (coord[axis] + 1 < static_cast<NodeId>(m_shape[axis])) {
         Coordinates next = coord;
         ++next[axis];
         result.push_back(this->node(next));
@@ -99,35 +98,37 @@ template <std::size_t Dim, class Scalar>
 class GridDataView {
  public:
   using value_type = Scalar;
-  using Layout = GridLayout<Dim>;
-  using Coordinates = typename Layout::Coordinates;
+  using GridLayout = emdgrid::GridLayout<Dim>;
+  using Coordinates = typename GridLayout::Coordinates;
 
-  GridDataView(const Layout& layout, std::span<const Scalar> data)
+  GridDataView(const GridLayout& layout, std::span<const Scalar> data)
       : m_layout(layout), m_data(data) {
     if (m_data.size() != layout.node_count()) {
       throw std::invalid_argument("grid data size does not match layout");
     }
   }
-  GridDataView(Layout&&, std::span<const Scalar>) = delete;
+  GridDataView(GridLayout&&, std::span<const Scalar>) = delete;
 
-  [[nodiscard]] const Layout& layout() const noexcept { return m_layout.get(); }
+  [[nodiscard]] const GridLayout& layout() const noexcept {
+    return m_layout.get();
+  }
 
   [[nodiscard]] const Scalar& operator()(Coordinates coord) const {
-    return m_data[m_layout.get().node(coord)];
+    return m_data[static_cast<std::size_t>(m_layout.get().node(coord))];
   }
 
   template <class... Indices>
     requires(sizeof...(Indices) == Dim &&
-             (std::convertible_to<Indices, std::size_t> && ...))
+             (std::convertible_to<Indices, std::ptrdiff_t> && ...))
   [[nodiscard]] const Scalar& operator()(Indices... indices) const {
-    return (*this)(Coordinates{static_cast<std::size_t>(indices)...});
+    return (*this)(Coordinates{static_cast<std::ptrdiff_t>(indices)...});
   }
 
   [[nodiscard]] std::span<const Scalar> data() const noexcept { return m_data; }
 
  private:
-  std::reference_wrapper<const Layout> m_layout;
-  std::span<const Scalar> m_data;
+  const std::reference_wrapper<const GridLayout> m_layout;
+  const std::span<const Scalar> m_data;
 };
 
 [[nodiscard]] std::string_view version() noexcept;
