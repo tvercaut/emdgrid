@@ -35,7 +35,8 @@ double emd_l1_impl(py::array_t<double, py::array::c_style> h1,
 double emd_l1_py(py::array_t<double, py::array::c_style> h1,
                  py::array_t<double, py::array::c_style> h2) {
   if (h1.ndim() != h2.ndim()) {
-    throw std::invalid_argument("h1 and h2 must have the same number of dimensions");
+    throw std::invalid_argument(
+        "h1 and h2 must have the same number of dimensions");
   }
   switch (h1.ndim()) {
     case 1:
