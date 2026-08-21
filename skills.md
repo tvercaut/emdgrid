@@ -5,10 +5,11 @@ This project follows the [C++ Core Guidelines](https://isocpp.github.io/CppCoreG
 ## Naming
 
 - **Types** (classes, structs, enums): `CamelCase` (e.g., `LingOkadaSolver`).
-- **Functions and local variables**: `camelCase` (e.g., `totalFlow`, `numNodes`).
-- **Private member variables**: `m_` prefix, no suffix (e.g., `m_nodes`, `m_nEdges`).
+- **Functions and local variables**: `snake_case` (e.g., `register_bv`, `find_loop`).
+- **Private member variables**: `m_` prefix with `snake_case` suffix
+  (e.g., `m_nodes`, `m_n_edges`, `m_enter_nbv_pos`).
 - **No `k` prefix** for constants; prefer `static constexpr` private members
-  named in `camelCase` (e.g., `static constexpr int defaultMaxIter = 500;`).
+  named in `snake_case` (e.g., `static constexpr int default_max_iter = 500;`).
 - **No Hungarian notation** or other type-encoding prefixes.
 
 ## Style
