@@ -16,5 +16,5 @@ if(BUILD_TESTING)
     COMMAND
       ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>
       ${Python3_EXECUTABLE} -c
-      "import pyemdgrid; assert pyemdgrid.add(2, 3) == 5; assert pyemdgrid.version() == '${PROJECT_VERSION}'")
+      "import pyemdgrid; assert pyemdgrid.add(2, 3) == 5; assert pyemdgrid.version() == '${emdgrid_VERSION}'")
 endif()

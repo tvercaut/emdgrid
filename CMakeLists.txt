@@ -24,7 +24,7 @@ target_include_directories(
   emdgrid
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
-target_compile_definitions(emdgrid PRIVATE EMDGRID_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(emdgrid PRIVATE EMDGRID_VERSION="${emdgrid_VERSION}")
 target_compile_features(emdgrid PUBLIC cxx_std_23)
 
 option(EMDGRID_BUILD_EXAMPLES "Build example targets" ON)
