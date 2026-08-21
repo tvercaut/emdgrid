@@ -12,7 +12,7 @@
 namespace emdgrid {
 
 template <std::size_t Dim>
-  requires(Dim > 0)
+requires(Dim > 0)
 class GridLayout {
  public:
   using NodeId = std::ptrdiff_t;
@@ -132,5 +132,6 @@ class GridDataView {
 };
 
 [[nodiscard]] std::string_view version() noexcept;
+[[nodiscard]] int add(int lhs, int rhs) noexcept;
 
 }  // namespace emdgrid
