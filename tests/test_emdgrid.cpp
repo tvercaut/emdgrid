@@ -232,7 +232,7 @@ TEST_CASE("emd_l1 2D: consistent with 1D projection for separable transport") {
 
 TEST_CASE("emd_l1 2D: pivot required — greedy is suboptimal") {
   // H1 has mass at top row, H2 at bottom row.
-  // Greedy moves mass diagonally (cost 2); optimal moves straight down (cost 1).
+  // Greedy: diagonal (cost 2); optimal: straight down (cost 1).
   const emdgrid::GridLayout<2> layout({2, 2});
   const std::vector<double> h1v = {0.5, 0.5, 0.0, 0.0};
   const std::vector<double> h2v = {0.0, 0.0, 0.5, 0.5};

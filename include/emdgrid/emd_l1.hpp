@@ -21,7 +21,7 @@ namespace detail {
 struct EmdNode {
   double d{0.0};                    // supply/demand = H1[i] - H2[i]
   int u{0};                         // dual variable (potential)
-  int level{-1};                    // depth in BV spanning tree (-1 = unvisited)
+  int level{-1};                    // depth in BV spanning tree (-1=unvisited)
   std::ptrdiff_t parent_node{-1};   // index of parent node  (-1 = root)
   std::ptrdiff_t parent_edge{-1};   // index of parent BV edge (-1 = root)
   std::ptrdiff_t first_child{-1};   // head of linked-list of child BV edges
@@ -32,7 +32,7 @@ struct EmdEdge {
   std::ptrdiff_t c{-1};    // child  endpoint
   double flow{0.0};
   int dir{1};              // 1 = outward (p→c carries `flow` units), 0 = inward
-  std::ptrdiff_t next{-1}; // next sibling in parent's child-edge linked list
+  std::ptrdiff_t next{-1};  // next sibling in parent's child-edge linked list
 };
 
 // ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ inline bool EmdSolver::is_optimal() {
 
 inline void EmdSolver::find_loop() {
   // Entering edge: edges_[nbv_[enter_nbv_pos_]]
-  // pFrom traces ancestors of the entering parent; pTo traces the entering child.
+  // pFrom: ancestors of entering parent; pTo: ancestors of entering child.
   std::ptrdiff_t enter_eidx = nbv_[enter_nbv_pos_];
   std::ptrdiff_t from_node = edges_[enter_eidx].p;  // entering parent
   std::ptrdiff_t to_node = edges_[enter_eidx].c;    // entering child
@@ -435,7 +435,7 @@ template <std::floating_point Scalar>
 /// The ground distance is the L1 (Manhattan) distance between bin indices.
 /// Both histograms must share the same grid layout and have equal total mass.
 template <std::size_t Dim, std::floating_point Scalar>
-  requires(Dim >= 2)
+  requires(Dim >= 2)  // NOLINT(whitespace/indent_namespace)
 [[nodiscard]] Scalar emd_l1(const GridDataView<Dim, Scalar>& h1,
                              const GridDataView<Dim, Scalar>& h2) {
   if (h1.layout().shape() != h2.layout().shape()) {
