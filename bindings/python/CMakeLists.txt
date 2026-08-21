@@ -17,4 +17,14 @@ if(BUILD_TESTING)
       ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>
       ${Python3_EXECUTABLE} -c
       "import pyemdgrid; assert pyemdgrid.version() == '${EMDGRID_GIT_VERSION}'")
+
+  find_program(PYTEST_EXE NAMES pytest pytest3)
+  if(PYTEST_EXE)
+    add_test(
+      NAME pyemdgrid_pytest
+      COMMAND
+        ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>
+        ${Python3_EXECUTABLE} -m pytest
+        ${CMAKE_SOURCE_DIR}/tests/test_emdgrid.py -v)
+  endif()
 endif()
