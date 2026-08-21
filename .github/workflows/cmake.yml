@@ -32,6 +32,10 @@ jobs:
     - name: Install CMake 4.4
       run: python -m pip install cmake==4.4.0
 
+    - name: Install Python test dependencies
+      if: matrix.build_python_bindings == 'ON'
+      run: python -m pip install pytest numpy scipy POT
+
     - name: Install optional tools (clang-tidy)
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt-get install -y clang-tidy
