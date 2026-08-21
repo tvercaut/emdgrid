@@ -132,6 +132,5 @@ class GridDataView {
 };
 
 [[nodiscard]] std::string_view version() noexcept;
-[[nodiscard]] int add(int lhs, int rhs) noexcept;
 
 }  // namespace emdgrid
