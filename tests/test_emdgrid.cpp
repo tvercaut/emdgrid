@@ -2,6 +2,7 @@
 #include <string_view>
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/version.hpp"
 
 int main() {
   constexpr int kExpectedSum = 5;
@@ -10,7 +11,7 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  if (emdgrid::version() != std::string_view(EMDGRID_VERSION)) {
+  if (emdgrid::version() != emdgrid::kVersion) {
     return EXIT_FAILURE;
   }
 

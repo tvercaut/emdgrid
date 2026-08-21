@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 4.4)
 
 project(emdgrid VERSION 0.1.0 LANGUAGES CXX)
 
+include(cmake/GitVersion.cmake)
+configure_file(
+  include/emdgrid/version.hpp.in
+  ${CMAKE_CURRENT_BINARY_DIR}/include/emdgrid/version.hpp
+  @ONLY)
+
 if(MSVC)
   add_compile_options(/W4)
 else()
@@ -23,8 +29,8 @@ add_library(emdgrid src/emdgrid.cpp)
 target_include_directories(
   emdgrid
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
          $<INSTALL_INTERFACE:include>)
-target_compile_definitions(emdgrid PRIVATE EMDGRID_VERSION="${emdgrid_VERSION}")
 target_compile_features(emdgrid PUBLIC cxx_std_23)
 
 option(EMDGRID_BUILD_EXAMPLES "Build example targets" ON)
