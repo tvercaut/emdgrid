@@ -7,6 +7,7 @@ FetchContent_MakeAvailable(doctest)
 
 add_executable(emdgrid_tests test_emdgrid.cpp)
 target_link_libraries(emdgrid_tests PRIVATE doctest::doctest emdgrid)
+target_compile_definitions(emdgrid_tests PRIVATE EMDGRID_VERSION="${emdgrid_VERSION}")
 
 include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)
 doctest_discover_tests(emdgrid_tests)
