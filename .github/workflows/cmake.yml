@@ -29,6 +29,9 @@ jobs:
       with:
         python-version: '3.x'
 
+    - name: Install CMake 4.4
+      run: python -m pip install cmake==4.4.0
+
     - name: Install optional tools (clang-tidy)
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt-get install -y clang-tidy
