@@ -1,0 +1,47 @@
+name: CMake
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+env:
+  BUILD_TYPE: RelWithDebInfo
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+        - os: ubuntu-latest
+          build_python_bindings: ON
+        - os: windows-latest
+          build_python_bindings: OFF
+        - os: macos-latest
+          build_python_bindings: OFF
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.x'
+
+    - name: Install CMake 4.4
+      run: python -m pip install cmake==4.4.0
+
+    - name: Install optional tools (clang-tidy)
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get install -y clang-tidy
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} .
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure

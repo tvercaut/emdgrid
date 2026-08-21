@@ -1,0 +1,2 @@
+add_executable(emdgrid_example emdgrid_example.cpp)
+target_link_libraries(emdgrid_example PRIVATE emdgrid)
