@@ -94,7 +94,6 @@ int main() {
     bool caught_out_of_range = false;
     try {
       static_cast<void>(layout2d.node({2, 0}));
-      return EXIT_FAILURE;
     } catch (const std::out_of_range&) {
       caught_out_of_range = true;
     }
@@ -105,7 +104,6 @@ int main() {
     caught_out_of_range = false;
     try {
       static_cast<void>(layout2d.coordinates(k2dOutOfRangeNode));
-      return EXIT_FAILURE;
     } catch (const std::out_of_range&) {
       caught_out_of_range = true;
     }
@@ -118,7 +116,6 @@ int main() {
       static_cast<void>(
           emdgrid::GridDataView<2, int>(
               layout2d, std::span<const int>(values).first(kExpectedSum)));
-      return EXIT_FAILURE;
     } catch (const std::invalid_argument&) {
       caught_invalid_argument = true;
     }

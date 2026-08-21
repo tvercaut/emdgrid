@@ -3,6 +3,7 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <functional>
 #include <span>
 #include <stdexcept>
 #include <string_view>
@@ -97,23 +98,22 @@ class GridLayout {
 template <std::size_t Dim, class Scalar>
 class GridDataView {
  public:
-  static_assert(Dim > 0, "GridDataView requires at least one dimension.");
-
   using value_type = Scalar;
   using Layout = GridLayout<Dim>;
   using Coordinates = typename Layout::Coordinates;
 
   GridDataView(const Layout& layout, std::span<const Scalar> data)
-      : m_layout(&layout), m_data(data) {
+      : m_layout(layout), m_data(data) {
     if (m_data.size() != layout.node_count()) {
       throw std::invalid_argument("grid data size does not match layout");
     }
   }
+  GridDataView(Layout&&, std::span<const Scalar>) = delete;
 
-  [[nodiscard]] const Layout& layout() const noexcept { return *m_layout; }
+  [[nodiscard]] const Layout& layout() const noexcept { return m_layout.get(); }
 
   [[nodiscard]] const Scalar& operator()(Coordinates coord) const {
-    return m_data[m_layout->node(coord)];
+    return m_data[m_layout.get().node(coord)];
   }
 
   template <class... Indices>
@@ -126,7 +126,7 @@ class GridDataView {
   [[nodiscard]] std::span<const Scalar> data() const noexcept { return m_data; }
 
  private:
-  const Layout* m_layout;
+  std::reference_wrapper<const Layout> m_layout;
   std::span<const Scalar> m_data;
 };
 
