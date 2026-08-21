@@ -10,7 +10,7 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  if (emdgrid::version() != std::string_view("0.1.0")) {
+  if (emdgrid::version() != std::string_view(EMDGRID_VERSION)) {
     return EXIT_FAILURE;
   }
 

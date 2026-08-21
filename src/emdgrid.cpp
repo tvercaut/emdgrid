@@ -2,6 +2,6 @@
 
 namespace emdgrid {
 
-std::string_view version() noexcept { return "0.1.0"; }
+std::string_view version() noexcept { return EMDGRID_VERSION; }
 
 }  // namespace emdgrid

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.28)
 
 project(emdgrid VERSION 0.1.0 LANGUAGES CXX)
 
@@ -24,7 +24,8 @@ target_include_directories(
   emdgrid
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
-target_compile_features(emdgrid PUBLIC cxx_std_17)
+target_compile_definitions(emdgrid PUBLIC EMDGRID_VERSION="${PROJECT_VERSION}")
+target_compile_features(emdgrid PUBLIC cxx_std_23)
 
 option(EMDGRID_BUILD_EXAMPLES "Build example targets" ON)
 option(EMDGRID_BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
