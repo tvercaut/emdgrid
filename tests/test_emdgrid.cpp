@@ -1,9 +1,9 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <doctest/doctest.h>
+
 #include <span>
 #include <stdexcept>
 #include <vector>
-
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest/doctest.h>
 
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/version.hpp"
@@ -22,7 +22,8 @@ TEST_CASE("2D grid layout operations") {
   CHECK(layout2d.node_count() == t2d_node_count);
   CHECK(layout2d.edge_count() == t2d_edge_count);
   CHECK(layout2d.node({1, 2}) == t2d_last_node);
-  CHECK(layout2d.coordinates(4) == emdgrid::GridLayout<2>::Coordinates{1, 1});
+  CHECK(layout2d.coordinates(4) ==
+        emdgrid::GridLayout<2>::Coordinates{1, 1});
 
   const std::vector<emdgrid::GridLayout<2>::NodeId>
       expected_interior_neighbours = {1, 3, t2d_last_node};
@@ -31,7 +32,8 @@ TEST_CASE("2D grid layout operations") {
 
   const std::vector<emdgrid::GridLayout<2>::NodeId> expected_corner_neighbours =
       {3, 1};
-  CHECK(layout2d.neighbours(layout2d.node({0, 0})) == expected_corner_neighbours);
+  CHECK(layout2d.neighbours(layout2d.node({0, 0})) ==
+        expected_corner_neighbours);
 }
 
 TEST_CASE("3D grid layout operations") {
@@ -59,18 +61,22 @@ TEST_CASE("grid data view exposes layout and values") {
   CHECK(view.data().data() == values.data());
   CHECK(view.data().size() == values.size());
   CHECK(view(1, 2) == t2d_last_value);
-  CHECK(view(emdgrid::GridLayout<2>::Coordinates{0, 1}) == 1);
+  CHECK_EQ(view(emdgrid::GridLayout<2>::Coordinates{0, 1}), 1);
 }
 
 TEST_CASE("layout throws for out of range access") {
   constexpr emdgrid::GridLayout<2>::NodeId t2d_out_of_range_node = 6;
   const emdgrid::GridLayout<2> layout2d({2, 3});
 
-  CHECK_THROWS_AS(static_cast<void>(layout2d.node({-1, 0})), std::out_of_range);
-  CHECK_THROWS_AS(static_cast<void>(layout2d.node({2, 0})), std::out_of_range);
-  CHECK_THROWS_AS(static_cast<void>(layout2d.coordinates(-1)), std::out_of_range);
-  CHECK_THROWS_AS(static_cast<void>(layout2d.coordinates(t2d_out_of_range_node)),
+  CHECK_THROWS_AS(static_cast<void>(layout2d.node({-1, 0})),
                   std::out_of_range);
+  CHECK_THROWS_AS(static_cast<void>(layout2d.node({2, 0})),
+                  std::out_of_range);
+  CHECK_THROWS_AS(static_cast<void>(layout2d.coordinates(-1)),
+                  std::out_of_range);
+  CHECK_THROWS_AS(
+      static_cast<void>(layout2d.coordinates(t2d_out_of_range_node)),
+      std::out_of_range);
 }
 
 TEST_CASE("grid data view validates data size") {
