@@ -1,3 +1,4 @@
+#include <cmath>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -5,6 +6,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>  // NOLINT(build/include_order)
 
+#include "emdgrid/emd_l1.hpp"
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/version.hpp"
 
@@ -86,4 +88,155 @@ TEST_CASE("grid data view validates data size") {
       static_cast<void>(emdgrid::GridDataView<2, int>(
           layout2d, std::span(values).first(t2d_last_value))),
       std::invalid_argument);
+}
+
+// ============================================================================
+//  EMD-L1 tests
+// ============================================================================
+
+TEST_CASE("emd_l1 1D: identical histograms give zero") {
+  const emdgrid::GridLayout<1> layout({5});
+  const std::vector<double> v = {0.1, 0.2, 0.4, 0.2, 0.1};
+  const emdgrid::GridDataView<1, double> h(layout, std::span(v));
+  CHECK(emdgrid::emd_l1(h, h) == doctest::Approx(0.0));
+}
+
+TEST_CASE("emd_l1 1D: unit shift by one bin") {
+  // Moving one unit from bin 0 to bin 1 costs 1.
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 1.0, 0.0};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(1.0));
+}
+
+TEST_CASE("emd_l1 1D: unit shift by two bins") {
+  // Moving one unit from bin 0 to bin 2 costs 2.
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(2.0));
+}
+
+TEST_CASE("emd_l1 1D: symmetry") {
+  const emdgrid::GridLayout<1> layout({4});
+  const std::vector<double> av = {0.5, 0.5, 0.0, 0.0};
+  const std::vector<double> bv = {0.0, 0.0, 0.5, 0.5};
+  const emdgrid::GridDataView<1, double> ha(layout, std::span(av));
+  const emdgrid::GridDataView<1, double> hb(layout, std::span(bv));
+  CHECK(emdgrid::emd_l1(ha, hb) == doctest::Approx(emdgrid::emd_l1(hb, ha)));
+}
+
+TEST_CASE("emd_l1 1D: shape mismatch throws") {
+  const emdgrid::GridLayout<1> layout3({3});
+  const emdgrid::GridLayout<1> layout4({4});
+  const std::vector<double> v3 = {1.0, 0.0, 0.0};
+  const std::vector<double> v4 = {0.0, 0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> h3(layout3, std::span(v3));
+  const emdgrid::GridDataView<1, double> h4(layout4, std::span(v4));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::emd_l1(h3, h4)),
+                  std::invalid_argument);
+}
+
+TEST_CASE("emd_l1 2D: identical histograms give zero") {
+  const emdgrid::GridLayout<2> layout({3, 3});
+  const std::vector<double> v(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h(layout, std::span(v));
+  CHECK(emdgrid::emd_l1(h, h) == doctest::Approx(0.0));
+}
+
+TEST_CASE("emd_l1 2D: unit shift along one axis costs 1") {
+  // Move one unit from (0,0) to (0,1): L1 distance = 1.
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 1.0, 0.0, 0.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(1.0));
+}
+
+TEST_CASE("emd_l1 2D: diagonal shift costs 2") {
+  // Move one unit from (0,0) to (1,1): L1 distance = 2.
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(2.0));
+}
+
+TEST_CASE("emd_l1 2D: antisymmetric 2x2 histograms") {
+  // H1 = [[1,0],[0,1]], H2 = [[0,1],[1,0]].
+  // Optimal: move 1 unit (0,0)→(0,1) and 1 unit (1,1)→(1,0). Total cost = 2.
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0, 1.0};
+  const std::vector<double> h2v = {0.0, 1.0, 1.0, 0.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(2.0));
+}
+
+TEST_CASE("emd_l1 2D: symmetry") {
+  const emdgrid::GridLayout<2> layout({3, 3});
+  const std::vector<double> av = {0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                  0.5};
+  const std::vector<double> bv = {0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 0.0,
+                                  0.0};
+  const emdgrid::GridDataView<2, double> ha(layout, std::span(av));
+  const emdgrid::GridDataView<2, double> hb(layout, std::span(bv));
+  CHECK(emdgrid::emd_l1(ha, hb) == doctest::Approx(emdgrid::emd_l1(hb, ha)));
+}
+
+TEST_CASE("emd_l1 2D: shape mismatch throws") {
+  const emdgrid::GridLayout<2> layout2({2, 2});
+  const emdgrid::GridLayout<2> layout3({3, 3});
+  const std::vector<double> v4(4, 0.25);
+  const std::vector<double> v9(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h4(layout2, std::span(v4));
+  const emdgrid::GridDataView<2, double> h9(layout3, std::span(v9));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::emd_l1(h4, h9)),
+                  std::invalid_argument);
+}
+
+TEST_CASE("emd_l1 3D: diagonal shift costs 3") {
+  // Move one unit from (0,0,0) to (1,1,1): L1 distance = 3.
+  const emdgrid::GridLayout<3> layout({2, 2, 2});
+  std::vector<double> h1v(8, 0.0);
+  std::vector<double> h2v(8, 0.0);
+  h1v[0] = 1.0;
+  h2v[7] = 1.0;
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(3.0));
+}
+
+TEST_CASE("emd_l1 2D: consistent with 1D projection for separable transport") {
+  // If transport is purely along axis 0, EMD-L1 should equal the 1D EMD-L1
+  // of the marginal distributions along axis 0.
+  const emdgrid::GridLayout<2> layout({3, 1});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<2, double> h1_2d(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2_2d(layout, std::span(h2v));
+
+  const emdgrid::GridLayout<1> layout1d({3});
+  const emdgrid::GridDataView<1, double> h1_1d(layout1d, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2_1d(layout1d, std::span(h2v));
+
+  CHECK(emdgrid::emd_l1(h1_2d, h2_2d) ==
+        doctest::Approx(emdgrid::emd_l1(h1_1d, h2_1d)));
+}
+
+TEST_CASE("emd_l1 2D: pivot required — greedy is suboptimal") {
+  // H1 has mass at top row, H2 at bottom row.
+  // Greedy: diagonal (cost 2); optimal: straight down (cost 1).
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {0.5, 0.5, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 0.5, 0.5};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(1.0));
 }
