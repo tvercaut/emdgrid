@@ -1,11 +1,11 @@
-# Determine a version string from git describe, falling back to the CMake
-# project version if git is not available or no tags exist.
+# Determine a version string from git describe, falling back to "NOTAVAILABLE"
+# if git is not found or no tags/commits exist.
 #
 # Sets the variable EMDGRID_GIT_VERSION in the caller's scope.
 
 find_package(Git QUIET)
 
-set(EMDGRID_GIT_VERSION "${emdgrid_VERSION}")
+set(EMDGRID_GIT_VERSION "NOTAVAILABLE")
 
 if(Git_FOUND)
   execute_process(

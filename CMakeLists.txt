@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 4.4)
 
-project(emdgrid VERSION 0.1.0 LANGUAGES CXX)
+project(emdgrid LANGUAGES CXX)
 
 include(cmake/GitVersion.cmake)
 configure_file(
