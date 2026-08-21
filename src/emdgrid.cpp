@@ -3,6 +3,6 @@
 
 namespace emdgrid {
 
-std::string_view version() noexcept { return kVersion; }
+std::string_view version() noexcept { return detail::version; }
 
 }  // namespace emdgrid

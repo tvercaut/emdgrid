@@ -2,8 +2,8 @@
 
 #include <string_view>
 
-namespace emdgrid {
+namespace emdgrid::detail {
 
-inline constexpr std::string_view kVersion = "@EMDGRID_GIT_VERSION@";
+inline constexpr std::string_view version = "@EMDGRID_GIT_VERSION@";
 
-}  // namespace emdgrid
+}  // namespace emdgrid::detail

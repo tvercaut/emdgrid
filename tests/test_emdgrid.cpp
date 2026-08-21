@@ -11,7 +11,7 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  if (emdgrid::version() != emdgrid::kVersion) {
+  if (emdgrid::version() != emdgrid::detail::version) {
     return EXIT_FAILURE;
   }
 
