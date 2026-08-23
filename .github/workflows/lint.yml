@@ -1,7 +1,7 @@
 # GitHub Action to run cpplint recursively on all pushes and pull requests
 # https://github.com/cpplint/GitHub-Action-for-cpplint
 
-name: cpplint
+name: lint
 on: [push, pull_request]
 
 permissions:
