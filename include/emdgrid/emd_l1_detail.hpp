@@ -2,13 +2,22 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <utility>
 #include <vector>
 
 namespace emdgrid {
 
+struct SparseTransportPlan;
+
 namespace detail {
+
+struct DirectedEdgeFlow {
+  std::ptrdiff_t from;
+  std::ptrdiff_t to;
+  double flow;
+};
 
 // ---------------------------------------------------------------------------
 //  Data structures for the network-simplex EMD-L1 solver
@@ -67,6 +76,20 @@ class LingOkadaSolver {
 
   // Run network simplex and return the EMD-L1 value.
   double solve(std::ptrdiff_t root, int max_iter = 500);
+
+  [[nodiscard]] std::vector<DirectedEdgeFlow> get_directed_edge_flows() const {
+    std::vector<DirectedEdgeFlow> flows;
+    for (std::size_t e = 0; e < m_n_edges; ++e) {
+      if (m_is_bv[e] && m_edges[e].flow > 0.0) {
+        if (m_edges[e].dir == 1) {
+          flows.push_back({m_edges[e].p, m_edges[e].c, m_edges[e].flow});
+        } else {
+          flows.push_back({m_edges[e].c, m_edges[e].p, m_edges[e].flow});
+        }
+      }
+    }
+    return flows;
+  }
 
  private:
   void init_bv_tree(std::ptrdiff_t root);
@@ -393,6 +416,112 @@ inline double LingOkadaSolver::solve(std::ptrdiff_t root, int max_iter) {
   }
 
   return total_flow();
+}
+
+struct SupplyItem {
+  uint32_t source;
+  double amount;
+};
+
+inline void extract_transport_plan(
+    std::size_t n_nodes,
+    const std::vector<double>& h1_data,
+    const std::vector<double>& h2_data,
+    const std::vector<DirectedEdgeFlow>& edge_flows,
+    SparseTransportPlan* plan) {
+  if (!plan) {
+    return;
+  }
+  plan->source.clear();
+  plan->target.clear();
+  plan->flow.clear();
+
+  std::vector<double> supply(n_nodes, 0.0);
+  std::vector<double> demand(n_nodes, 0.0);
+
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    double self_mass = std::min(h1_data[i], h2_data[i]);
+    if (self_mass > 0.0) {
+      plan->source.push_back(static_cast<uint32_t>(i));
+      plan->target.push_back(static_cast<uint32_t>(i));
+      plan->flow.push_back(self_mass);
+    }
+    supply[i] = h1_data[i] - self_mass;
+    demand[i] = h2_data[i] - self_mass;
+  }
+
+  // Build adjacency list for edge flows
+  std::vector<std::vector<std::size_t>> out_edges(n_nodes);
+  std::vector<std::size_t> in_degree(n_nodes, 0);
+
+  for (std::size_t e = 0; e < edge_flows.size(); ++e) {
+    std::size_t u = static_cast<std::size_t>(edge_flows[e].from);
+    std::size_t v = static_cast<std::size_t>(edge_flows[e].to);
+    out_edges[u].push_back(e);
+    in_degree[v]++;
+  }
+
+  // Kahn's algorithm for topological ordering
+  std::vector<std::size_t> zero_in_nodes;
+  zero_in_nodes.reserve(n_nodes);
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    if (in_degree[i] == 0) {
+      zero_in_nodes.push_back(i);
+    }
+  }
+
+  std::vector<std::vector<SupplyItem>> node_supplies(n_nodes);
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    if (supply[i] > 0.0) {
+      node_supplies[i].push_back({static_cast<uint32_t>(i), supply[i]});
+    }
+  }
+
+  std::vector<std::size_t> current_in_degree = in_degree;
+  std::size_t head = 0;
+  while (head < zero_in_nodes.size()) {
+    std::size_t u = zero_in_nodes[head++];
+
+    // 1. Satisfy demand at u using node_supplies[u]
+    double d_u = demand[u];
+    while (d_u > 1e-12 && !node_supplies[u].empty()) {
+      auto& item = node_supplies[u].back();
+      double take = std::min(d_u, item.amount);
+      plan->source.push_back(item.source);
+      plan->target.push_back(static_cast<uint32_t>(u));
+      plan->flow.push_back(take);
+
+      d_u -= take;
+      item.amount -= take;
+      if (item.amount <= 1e-12) {
+        node_supplies[u].pop_back();
+      }
+    }
+
+    // 2. Forward remaining supplies at u along outgoing edge flows
+    for (std::size_t e_idx : out_edges[u]) {
+      const auto& edge = edge_flows[e_idx];
+      std::size_t v = static_cast<std::size_t>(edge.to);
+      double f_needed = edge.flow;
+
+      while (f_needed > 1e-12 && !node_supplies[u].empty()) {
+        auto& item = node_supplies[u].back();
+        double take = std::min(f_needed, item.amount);
+        node_supplies[v].push_back({item.source, take});
+
+        f_needed -= take;
+        item.amount -= take;
+        if (item.amount <= 1e-12) {
+          node_supplies[u].pop_back();
+        }
+      }
+
+      current_in_degree[v]--;
+      if (current_in_degree[v] == 0) {
+        zero_in_nodes.push_back(v);
+      }
+    }
+  }
 }
 
 }  // namespace detail

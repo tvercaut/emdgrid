@@ -114,6 +114,15 @@ class TestEmdL1Binding:
         h2 = np.asfortranarray(np.array([[0.0, 0.0], [0.5, 0.5]]))
         assert pyemdgrid.emd_l1(h1, h2) == pytest.approx(1.0)
 
+    def test_return_transport_plan_option(self):
+        h1 = np.array([[1.0, 0.0], [0.0, 1.0]])
+        h2 = np.array([[0.0, 1.0], [1.0, 0.0]])
+        cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+        assert cost == pytest.approx(2.0)
+        assert isinstance(plan, pyemdgrid.SparseTransportPlan)
+        assert len(plan.source) == len(plan.target) == len(plan.flow)
+        assert sum(plan.flow) == pytest.approx(2.0)
+
 
 # ---------------------------------------------------------------------------
 # Cross-validation against POT
@@ -159,3 +168,24 @@ class TestEmdL1VsPot:
         assert pyemdgrid.emd_l1(h1, h2) == pytest.approx(
             pyemdgrid.emd_l1(h2, h1), rel=1e-10
         )
+
+    def test_transport_plan_reconstructs_cost_and_mass(self, rng):
+        shape = (3, 4, 2)
+        h1, h2 = self._make_histograms(rng, shape)
+        cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+
+        ndim = len(shape)
+        axes = [np.arange(s) for s in shape]
+        coords = (
+            np.array(np.meshgrid(*axes, indexing="ij"))
+            .reshape(ndim, -1)
+            .T.astype(np.float64)
+        )
+
+        reconstructed_cost = 0.0
+        for src, tgt, flow in zip(plan.source, plan.target, plan.flow):
+            dist = np.sum(np.abs(coords[src] - coords[tgt]))
+            reconstructed_cost += flow * dist
+
+        assert reconstructed_cost == pytest.approx(cost, rel=1e-5, abs=1e-8)
+        assert sum(plan.flow) == pytest.approx(1.0, rel=1e-5, abs=1e-8)
