@@ -15,5 +15,6 @@ jobs:
     - uses: actions/setup-python@v7
       with:
         python-version: 3.x
-    - run: pip install cpplint
+    - run: pip install cpplint black
     - run: cpplint --recursive .
+    - run: black --check .
