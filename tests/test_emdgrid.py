@@ -13,7 +13,6 @@ import ot
 
 import pyemdgrid
 
-
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -31,8 +30,10 @@ def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray) -> float:
     """
     ndim = hist1.ndim
     axes = [np.arange(s) for s in hist1.shape]
-    coords = np.array(np.meshgrid(*axes, indexing="ij")).reshape(ndim, -1).T.astype(
-        np.float64
+    coords = (
+        np.array(np.meshgrid(*axes, indexing="ij"))
+        .reshape(ndim, -1)
+        .T.astype(np.float64)
     )
 
     a = hist1.ravel().astype(np.float64)

@@ -1,7 +1,7 @@
-# GitHub Action to run cpplint recursively on all pushes and pull requests
-# https://github.com/cpplint/GitHub-Action-for-cpplint
+# GitHub Action to run code linting on all pushes and pull requests
+# Adapted from https://github.com/cpplint/GitHub-Action-for-cpplint
 
-name: cpplint
+name: lint
 on: [push, pull_request]
 
 permissions:
@@ -15,5 +15,6 @@ jobs:
     - uses: actions/setup-python@v7
       with:
         python-version: 3.x
-    - run: pip install cpplint
+    - run: pip install cpplint black
     - run: cpplint --recursive .
+    - run: black --check .
