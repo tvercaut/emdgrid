@@ -1,2 +1,3 @@
 Checks: '-*,portability-*,bugprone-*,-bugprone-easily-swappable-parameters,readability-*,clang-analyzer-*,performance-*'
 HeaderFilterRegex: 'include/.*'
+WarningsAsErrors: '*'
