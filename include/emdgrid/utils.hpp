@@ -18,12 +18,7 @@ template <std::floating_point Scalar = double>
   if (input.empty()) {
     return {};
   }
-  Scalar max_val = input[0];
-  for (const Scalar x : input) {
-    if (x > max_val) {
-      max_val = x;
-    }
-  }
+  const Scalar max_val = *std::max_element(input.begin(), input.end());
 
   std::vector<Scalar> result(input.size());
   Scalar sum{0};
