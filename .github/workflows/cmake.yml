@@ -40,6 +40,10 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt-get install -y clang-tidy
 
+    - name: Enable clang-tidy problem matcher
+      if: matrix.os == 'ubuntu-latest'
+      run: echo "::add-matcher::.github/clang-tidy-matcher.json"
+
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} .
 

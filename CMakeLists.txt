@@ -18,7 +18,7 @@ find_program(CLANG_TIDY_EXE NAMES clang-tidy)
 if(CLANG_TIDY_EXE)
   set(CMAKE_CXX_CLANG_TIDY
       ${CLANG_TIDY_EXE};
-      -header-filter=.*;
+      -header-filter=${CMAKE_CURRENT_SOURCE_DIR}/include/.*;
       -checks=-*,portability-*,bugprone-*,-bugprone-easily-swappable-parameters,readability-*,clang-analyzer-*,performance-*)
   message(STATUS "Found clang-tidy: ${CLANG_TIDY_EXE}.")
 else()
