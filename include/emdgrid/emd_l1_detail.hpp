@@ -429,7 +429,7 @@ inline void extract_transport_plan(
     const std::vector<double>& h2_data,
     const std::vector<DirectedEdgeFlow>& edge_flows,
     SparseTransportPlan* plan) {
-  if (!plan) {
+  if (plan == nullptr) {
     return;
   }
   plan->source.clear();
