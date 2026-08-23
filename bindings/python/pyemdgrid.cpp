@@ -13,8 +13,8 @@ namespace {
 
 /// Dispatch emd_l1 for a numpy array of the given dimensionality.
 template <std::size_t Dim>
-double emd_l1_impl(const py::array_t<double, py::array::c_style> & h1,
-                   const py::array_t<double, py::array::c_style> & h2) {
+double emd_l1_impl(const py::array_t<double, py::array::c_style>& h1,
+                   const py::array_t<double, py::array::c_style>& h2) {
   if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
       h2.ndim() != static_cast<py::ssize_t>(Dim)) {
     throw std::invalid_argument("array dimensionality does not match Dim");
@@ -32,8 +32,8 @@ double emd_l1_impl(const py::array_t<double, py::array::c_style> & h1,
 }
 
 /// Python-level emd_l1: accepts any numpy array with ndim in {1,2,3}.
-double emd_l1_py(const py::array_t<double, py::array::c_style> & h1,
-                 const py::array_t<double, py::array::c_style> & h2) {
+double emd_l1_py(const py::array_t<double, py::array::c_style>& h1,
+                 const py::array_t<double, py::array::c_style>& h2) {
   if (h1.ndim() != h2.ndim()) {
     throw std::invalid_argument(
         "h1 and h2 must have the same number of dimensions");
