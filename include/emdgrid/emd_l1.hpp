@@ -142,7 +142,9 @@ template <std::size_t Dim, std::floating_point Scalar,
 
     // All other forward edges from i are NBV
     for (std::size_t a = 0; a < Dim; ++a) {
-      if (a == best_axis) continue;
+      if (a == best_axis) {
+        continue;
+      }
       const std::size_t k = static_cast<std::size_t>(coord[a]);
       if (k + 1 < shape[a]) {
         solver.register_nbv(i, i + stride[a]);
@@ -156,7 +158,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     typename GridLayout<Dim>::Coordinates rc{};
     for (std::size_t a = 0; a < Dim; ++a) {
       rc[a] = static_cast<std::ptrdiff_t>(shape[a] / 2);
-      if (shape[a] > 1 && rc[a] > 0) --rc[a];
+      if (shape[a] > 1 && rc[a] > 0) {
+        --rc[a];
+      }
     }
     root = layout.node(rc);
   }
