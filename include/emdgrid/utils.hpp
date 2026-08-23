@@ -12,41 +12,43 @@
 
 namespace emdgrid {
 
-/// Computes the softmax of a given sequence of numbers.
+/// Computes the softmax of a given sequence of numbers using an online,
+/// numerically safe streaming formulation.
 template <std::floating_point Scalar = double>
 [[nodiscard]] std::vector<Scalar> softmax(std::span<const Scalar> input) {
   if (input.empty()) {
     return {};
   }
-  const Scalar max_val = *std::max_element(input.begin(), input.end());
 
-  std::vector<Scalar> result(input.size());
-  Scalar sum{0};
-  for (std::size_t i = 0; i < input.size(); ++i) {
-    const Scalar exp_val = std::exp(input[i] - max_val);
-    result[i] = exp_val;
-    sum += exp_val;
+  Scalar max_val = input.front();
+  Scalar normalizer{1};
+
+  for (const Scalar x : input.subspan(1)) {
+    if (x > max_val) {
+      normalizer = normalizer * std::exp(max_val - x) + Scalar{1};
+      max_val = x;
+    } else {
+      normalizer += std::exp(x - max_val);
+    }
   }
 
-  if (sum > Scalar{0}) {
-    for (Scalar& x : result) {
-      x /= sum;
-    }
+  std::vector<Scalar> result;
+  result.reserve(input.size());
+  for (const Scalar x : input) {
+    result.push_back(std::exp(x - max_val) / normalizer);
   }
 
   return result;
 }
 
 /// Generates a normalized histogram of given size using random numbers
-/// transformed via softmax.
+/// transformed via online softmax.
 template <std::floating_point Scalar = double, class Generator>
 [[nodiscard]] std::vector<Scalar> generate_random_histogram(
     std::size_t size, Generator& g) {
   std::uniform_real_distribution<Scalar> dist(Scalar{-1}, Scalar{1});
   std::vector<Scalar> raw(size);
-  for (std::size_t i = 0; i < size; ++i) {
-    raw[i] = dist(g);
-  }
+  std::generate(raw.begin(), raw.end(), [&] { return dist(g); });
   return softmax<Scalar>(raw);
 }
 
