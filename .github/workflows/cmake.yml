@@ -10,6 +10,7 @@ env:
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         include:
@@ -39,6 +40,10 @@ jobs:
     - name: Install optional tools (clang-tidy)
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt-get install -y clang-tidy
+
+    - name: Enable clang-tidy problem matcher
+      if: matrix.os == 'ubuntu-latest'
+      run: echo "::add-matcher::.github/clang-tidy-matcher.json"
 
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} .
