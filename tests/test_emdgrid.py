@@ -8,6 +8,7 @@ POT's ot.emd2_lazy (exact network-simplex solver using cityblock distance) for
 
 import numpy as np
 import pytest
+import scipy.spatial
 import scipy.special
 import ot
 
@@ -169,7 +170,7 @@ class TestEmdL1VsPot:
             pyemdgrid.emd_l1(h2, h1), rel=1e-10
         )
 
-    def test_transport_plan_reconstructs_cost_and_mass(self, rng):
+    def test_transport_plan_matches_pot(self, rng):
         shape = (3, 4, 2)
         h1, h2 = self._make_histograms(rng, shape)
         cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
@@ -182,10 +183,20 @@ class TestEmdL1VsPot:
             .T.astype(np.float64)
         )
 
-        reconstructed_cost = 0.0
-        for src, tgt, flow in zip(plan.source, plan.target, plan.flow):
-            dist = np.sum(np.abs(coords[src] - coords[tgt]))
-            reconstructed_cost += flow * dist
+        n_nodes = int(np.prod(shape))
+        M = scipy.spatial.distance.cdist(coords, coords, metric="cityblock")
+        pot_G = ot.emd(h1.ravel(), h2.ravel(), M)
 
-        assert reconstructed_cost == pytest.approx(cost, rel=1e-5, abs=1e-8)
-        assert sum(plan.flow) == pytest.approx(1.0, rel=1e-5, abs=1e-8)
+        our_G = np.zeros((n_nodes, n_nodes))
+        for src, tgt, flow in zip(plan.source, plan.target, plan.flow):
+            our_G[src, tgt] += flow
+
+        our_cost = np.sum(our_G * M)
+        pot_cost = np.sum(pot_G * M)
+
+        assert our_cost == pytest.approx(cost, rel=1e-5, abs=1e-8)
+        assert our_cost == pytest.approx(pot_cost, rel=1e-5, abs=1e-8)
+
+        # Check marginals match H1 and H2
+        assert np.sum(our_G, axis=1) == pytest.approx(h1.ravel(), rel=1e-5, abs=1e-8)
+        assert np.sum(our_G, axis=0) == pytest.approx(h2.ravel(), rel=1e-5, abs=1e-8)
