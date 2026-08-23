@@ -1,2 +1,2 @@
-Checks: '-*,portability-*,bugprone-*,-bugprone-easily-swappable-parameters,-bugprone-exception-escape,readability-*,-readability-identifier-length,-readability-magic-numbers,-readability-function-cognitive-complexity,clang-analyzer-*,-clang-analyzer-cplusplus.NewDeleteLeaks,performance-*'
+Checks: '-*,portability-*,bugprone-*,-bugprone-easily-swappable-parameters,-bugprone-exception-escape,readability-*,-readability-identifier-length,-readability-magic-numbers,-readability-function-cognitive-complexity,clang-analyzer-*,performance-*'
 HeaderFilterRegex: 'include/.*'
