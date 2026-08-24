@@ -13,6 +13,10 @@ target_link_libraries(pyemdgrid PRIVATE emdgrid)
 if(BUILD_TESTING)
   set(PYEMDGRID_TEST_ENV "PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>")
 
+  if(USE_ASAN)
+    list(APPEND PYEMDGRID_TEST_ENV "ASAN_OPTIONS=detect_leaks=0")
+  endif()
+
   if(USE_ASAN AND ASAN_PRELOAD_LIBS)
     list(APPEND PYEMDGRID_TEST_ENV "LD_PRELOAD=${ASAN_PRELOAD_LIBS}")
   endif()
