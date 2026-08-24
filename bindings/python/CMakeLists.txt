@@ -13,8 +13,12 @@ target_link_libraries(pyemdgrid PRIVATE emdgrid)
 if(BUILD_TESTING)
   set(PYEMDGRID_TEST_ENV "PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>")
 
-  if(USE_ASAN AND ASAN_PRELOAD_LIBS)
-    list(APPEND PYEMDGRID_TEST_ENV "LD_PRELOAD=${ASAN_PRELOAD_LIBS}")
+  if(USE_ASAN)
+    # Disable LeakSanitizer in python test as we get too many false positives from pybind
+    list(APPEND PYEMDGRID_TEST_ENV "ASAN_OPTIONS=detect_leaks=0")
+    if(ASAN_PRELOAD_LIBS)
+      list(APPEND PYEMDGRID_TEST_ENV "LD_PRELOAD=${ASAN_PRELOAD_LIBS}")
+    endif()
   endif()
 
   add_test(
