@@ -40,21 +40,17 @@ def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray, return_matrix: bool = 
     a = hist1.ravel().astype(np.float64)
     b = hist2.ravel().astype(np.float64)
 
+    cost, log = ot.emd2_lazy(
+        coords,
+        coords,
+        a,
+        b,
+        metric="cityblock",
+        log=True,
+        return_matrix=return_matrix,
+    )
     if return_matrix:
-        cost, log = ot.emd2_lazy(
-            coords,
-            coords,
-            a,
-            b,
-            metric="cityblock",
-            log=True,
-            return_matrix=True,
-        )
-        pot_G = log["G"].toarray() if scipy.sparse.issparse(log["G"]) else log["G"]
-        return float(cost), pot_G
-
-    result = ot.emd2_lazy(coords, coords, a, b, metric="cityblock")
-    cost = result[0] if isinstance(result, tuple) else result
+        return float(cost), log["G"]
     return float(cost)
 
 
@@ -197,21 +193,12 @@ class TestEmdL1VsPot:
             .T.astype(np.float64)
         )
 
-        cost_pot, log = ot.emd2_lazy(
-            coords,
-            coords,
-            h1.ravel(),
-            h2.ravel(),
-            metric="cityblock",
-            log=True,
-            return_matrix=True,
-        )
-        pot_G = log["G"].toarray() if scipy.sparse.issparse(log["G"]) else log["G"]
-        our_G = plan.toarray() if scipy.sparse.issparse(plan) else plan
+        pot_G_dense = pot_G.toarray() if scipy.sparse.issparse(pot_G) else pot_G
+        our_G_dense = plan.toarray() if scipy.sparse.issparse(plan) else plan
 
         M = scipy.spatial.distance.cdist(coords, coords, metric="cityblock")
-        our_cost = np.sum(our_G * M)
-        pot_cost = np.sum(pot_G * M)
+        our_cost = np.sum(our_G_dense * M)
+        pot_cost = np.sum(pot_G_dense * M)
 
         # Verify cost equality with EMD-L1 solver and POT
         assert cost == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
@@ -219,5 +206,9 @@ class TestEmdL1VsPot:
         assert our_cost == pytest.approx(cost, rel=1e-5, abs=1e-8)
 
         # Verify plan satisfies marginal constraints H1 and H2
-        assert np.sum(our_G, axis=1) == pytest.approx(h1.ravel(), rel=1e-5, abs=1e-8)
-        assert np.sum(our_G, axis=0) == pytest.approx(h2.ravel(), rel=1e-5, abs=1e-8)
+        assert np.sum(our_G_dense, axis=1) == pytest.approx(
+            h1.ravel(), rel=1e-5, abs=1e-8
+        )
+        assert np.sum(our_G_dense, axis=0) == pytest.approx(
+            h2.ravel(), rel=1e-5, abs=1e-8
+        )
