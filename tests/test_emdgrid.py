@@ -197,6 +197,9 @@ class TestEmdL1VsPot:
         if request.config.getoption("--strict-pot"):
             assert plan.nnz == pot_G.nnz
             assert np.allclose(our_G_dense, pot_G_dense, atol=1e-5, rtol=1e-5)
+        else:
+            max_nnz_diff = 0.01 * h1.size * h2.size
+            assert abs(plan.nnz - pot_G.nnz) <= max_nnz_diff
 
         # Verify plan satisfies marginal constraints H1 and H2
         assert np.sum(our_G_dense, axis=1) == pytest.approx(

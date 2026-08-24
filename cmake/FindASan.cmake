@@ -15,21 +15,34 @@ if(USE_ASAN)
   set(ASan_FOUND TRUE)
 
   if(NOT MSVC AND NOT APPLE)
-    execute_process(
-      COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so
-      OUTPUT_VARIABLE ASAN_LIB_PATH
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
-    execute_process(
-      COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.so.6
-      OUTPUT_VARIABLE STDCXX_LIB_PATH
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    find_library(ASAN_LIBRARY NAMES asan libasan)
+    if(NOT ASAN_LIBRARY)
+      execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so
+        OUTPUT_VARIABLE ASAN_DRIVER_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+      if(EXISTS "${ASAN_DRIVER_PATH}")
+        set(ASAN_LIBRARY "${ASAN_DRIVER_PATH}")
+      endif()
+    endif()
+
+    find_library(STDCXX_LIBRARY NAMES stdc++ libstdc++.so.6)
+    if(NOT STDCXX_LIBRARY)
+      execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.so.6
+        OUTPUT_VARIABLE STDCXX_DRIVER_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+      if(EXISTS "${STDCXX_DRIVER_PATH}")
+        set(STDCXX_LIBRARY "${STDCXX_DRIVER_PATH}")
+      endif()
+    endif()
 
     set(PRELOAD_LIBS "")
-    if(EXISTS "${ASAN_LIB_PATH}")
-      list(APPEND PRELOAD_LIBS "${ASAN_LIB_PATH}")
+    if(ASAN_LIBRARY)
+      list(APPEND PRELOAD_LIBS "${ASAN_LIBRARY}")
     endif()
-    if(EXISTS "${STDCXX_LIB_PATH}")
-      list(APPEND PRELOAD_LIBS "${STDCXX_LIB_PATH}")
+    if(STDCXX_LIBRARY)
+      list(APPEND PRELOAD_LIBS "${STDCXX_LIBRARY}")
     endif()
 
     if(PRELOAD_LIBS)
