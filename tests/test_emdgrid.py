@@ -19,7 +19,7 @@ import pyemdgrid
 # ---------------------------------------------------------------------------
 
 
-def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray) -> float:
+def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray, return_matrix: bool = False):
     """
     Exact EMD-L1 reference via POT's lazy solver (ot.emd2_lazy).
 
@@ -40,8 +40,20 @@ def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray) -> float:
     a = hist1.ravel().astype(np.float64)
     b = hist2.ravel().astype(np.float64)
 
+    if return_matrix:
+        cost, log = ot.emd2_lazy(
+            coords,
+            coords,
+            a,
+            b,
+            metric="cityblock",
+            log=True,
+            return_matrix=True,
+        )
+        pot_G = log["G"].toarray() if scipy.sparse.issparse(log["G"]) else log["G"]
+        return float(cost), pot_G
+
     result = ot.emd2_lazy(coords, coords, a, b, metric="cityblock")
-    # ot.emd2_lazy returns (cost, log_dict) in newer POT versions
     cost = result[0] if isinstance(result, tuple) else result
     return float(cost)
 
@@ -175,6 +187,7 @@ class TestEmdL1VsPot:
         shape = (4, 5, 6)
         h1, h2 = self._make_histograms(rng, shape)
         cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+        cost_pot, pot_G = _emd_l1_via_pot(h1, h2, return_matrix=True)
 
         ndim = len(shape)
         axes = [np.arange(s) for s in shape]
