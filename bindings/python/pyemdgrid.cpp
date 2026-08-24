@@ -63,7 +63,19 @@ py::object emd_l1_py(const py::array_t<double, py::array::c_style>& h1,
   }
 
   if (return_transport_plan) {
-    return py::make_tuple(cost, plan);
+    py::object coo_matrix;
+    try {
+      py::module_ scipy_sparse = py::module_::import("scipy.sparse");
+      std::size_t n_nodes = static_cast<std::size_t>(h1.size());
+      coo_matrix = scipy_sparse.attr("coo_matrix")(
+          py::make_tuple(plan.flow,
+                         py::make_tuple(plan.source, plan.target)),
+          py::make_tuple(n_nodes, n_nodes));
+    } catch (const py::error_already_set&) {
+      // Fallback if scipy is not installed
+      return py::make_tuple(cost, plan);
+    }
+    return py::make_tuple(cost, coo_matrix);
   }
   return py::cast(cost);
 }

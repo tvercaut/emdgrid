@@ -120,9 +120,9 @@ class TestEmdL1Binding:
         h2 = np.array([[0.0, 1.0], [1.0, 0.0]])
         cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
         assert cost == pytest.approx(2.0)
-        assert isinstance(plan, pyemdgrid.SparseTransportPlan)
-        assert len(plan.source) == len(plan.target) == len(plan.flow)
-        assert sum(plan.flow) == pytest.approx(2.0)
+        assert scipy.sparse.issparse(plan)
+        assert plan.shape == (4, 4)
+        assert plan.sum() == pytest.approx(2.0)
 
 
 # ---------------------------------------------------------------------------
@@ -184,12 +184,16 @@ class TestEmdL1VsPot:
         )
 
         n_nodes = int(np.prod(shape))
-        M = scipy.spatial.distance.cdist(coords, coords, metric="cityblock")
-        pot_G = ot.emd(h1.ravel(), h2.ravel(), M)
+        _, log = ot.emd2_lazy(
+            coords, coords, h1.ravel(), h2.ravel(),
+            metric="cityblock", log=True, return_matrix=True
+        )
+        pot_G = log["G"]
+        if scipy.sparse.issparse(pot_G):
+            pot_G = pot_G.toarray()
 
-        our_G = np.zeros((n_nodes, n_nodes))
-        for src, tgt, flow in zip(plan.source, plan.target, plan.flow):
-            our_G[src, tgt] += flow
+        M = scipy.spatial.distance.cdist(coords, coords, metric="cityblock")
+        our_G = plan.toarray() if scipy.sparse.issparse(plan) else plan
 
         our_cost = np.sum(our_G * M)
         pot_cost = np.sum(pot_G * M)
