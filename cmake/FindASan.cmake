@@ -69,12 +69,42 @@ if(USE_ASAN)
 
   if(NOT MSVC)
     set(PRELOAD_LIBS "")
+    # Preload the ASan runtime to ensure it is loaded before any
+    # instrumented shared libraries. This avoids the common
+    # "ASan runtime does not come first" issue.
     if(ASAN_LIBRARY)
       list(APPEND PRELOAD_LIBS "${ASAN_LIBRARY}")
     endif()
 
+    # Also preload the C++ runtime associated with the compiler that
+    # built the project. This can help avoid runtime ABI mismatches
+    # when Python extension modules are loaded under CI.
+    #
+    # We intentionally ask the compiler for the location instead of
+    # using find_library(), as this guarantees we get the exact
+    # libstdc++ selected by the active toolchain.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.so.6
+        OUTPUT_VARIABLE LIBSTDCXX_LIBRARY
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+
+      # GCC returns the argument unchanged if the library cannot
+      # be located.
+      if(LIBSTDCXX_LIBRARY STREQUAL "libstdc++.so.6")
+        unset(LIBSTDCXX_LIBRARY)
+      endif()
+
+      if(LIBSTDCXX_LIBRARY)
+        message(STATUS "Using LIBSTDCXX_LIBRARY: ${LIBSTDCXX_LIBRARY}")
+        list(APPEND PRELOAD_LIBS "${LIBSTDCXX_LIBRARY}")
+      endif()
+    endif()
+
     if(PRELOAD_LIBS)
       string(REPLACE ";" " " PRELOAD_STR "${PRELOAD_LIBS}")
+      message(STATUS "ASAN_PRELOAD_LIBS=${PRELOAD_STR}")
       set(ASAN_PRELOAD_LIBS "${PRELOAD_STR}" CACHE INTERNAL
           "Preload libraries for ASan")
     endif()
