@@ -8,6 +8,7 @@ POT's ot.emd2_lazy (exact network-simplex solver using cityblock distance) for
 
 import numpy as np
 import pytest
+import scipy.spatial
 import scipy.special
 import ot
 
@@ -18,7 +19,7 @@ import pyemdgrid
 # ---------------------------------------------------------------------------
 
 
-def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray) -> float:
+def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray, return_matrix: bool = False):
     """
     Exact EMD-L1 reference via POT's lazy solver (ot.emd2_lazy).
 
@@ -39,9 +40,17 @@ def _emd_l1_via_pot(hist1: np.ndarray, hist2: np.ndarray) -> float:
     a = hist1.ravel().astype(np.float64)
     b = hist2.ravel().astype(np.float64)
 
-    result = ot.emd2_lazy(coords, coords, a, b, metric="cityblock")
-    # ot.emd2_lazy returns (cost, log_dict) in newer POT versions
-    cost = result[0] if isinstance(result, tuple) else result
+    cost, log = ot.emd2_lazy(
+        coords,
+        coords,
+        a,
+        b,
+        metric="cityblock",
+        log=True,
+        return_matrix=return_matrix,
+    )
+    if return_matrix:
+        return float(cost), log["G"]
     return float(cost)
 
 
@@ -114,6 +123,15 @@ class TestEmdL1Binding:
         h2 = np.asfortranarray(np.array([[0.0, 0.0], [0.5, 0.5]]))
         assert pyemdgrid.emd_l1(h1, h2) == pytest.approx(1.0)
 
+    def test_return_transport_plan_option(self):
+        h1 = np.array([[1.0, 0.0], [0.0, 1.0]])
+        h2 = np.array([[0.0, 1.0], [1.0, 0.0]])
+        cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+        assert cost == pytest.approx(2.0)
+        assert scipy.sparse.issparse(plan)
+        assert plan.shape == (4, 4)
+        assert plan.sum() == pytest.approx(2.0)
+
 
 # ---------------------------------------------------------------------------
 # Cross-validation against POT
@@ -159,3 +177,42 @@ class TestEmdL1VsPot:
         assert pyemdgrid.emd_l1(h1, h2) == pytest.approx(
             pyemdgrid.emd_l1(h2, h1), rel=1e-10
         )
+
+    def test_transport_plan_matches_pot(self, rng):
+        """Test transport plan on realistic 3D random histograms against POT."""
+        shape = (4, 5, 6)
+        h1, h2 = self._make_histograms(rng, shape)
+        cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+        cost_pot, pot_G = _emd_l1_via_pot(h1, h2, return_matrix=True)
+
+        pot_G_dense = pot_G.toarray() if scipy.sparse.issparse(pot_G) else pot_G
+        our_G_dense = plan.toarray() if scipy.sparse.issparse(plan) else plan
+
+        # Verify cost equality with EMD-L1 solver and POT
+        assert cost == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
+
+        # Verify plan properties match POT
+        assert plan.nnz == pot_G.nnz
+        assert plan.shape == pot_G.shape
+
+        # Verify plan satisfies marginal constraints H1 and H2
+        assert np.sum(our_G_dense, axis=1) == pytest.approx(
+            h1.ravel(), rel=1e-5, abs=1e-8
+        )
+        assert np.sum(our_G_dense, axis=0) == pytest.approx(
+            h2.ravel(), rel=1e-5, abs=1e-8
+        )
+
+    def test_transport_plan_exact_match_pot_2d(self):
+        """Test exact element-wise transport plan match with POT on 2D grid."""
+        h1 = np.array([[0.5, 0.0], [0.0, 0.5]])
+        h2 = np.array([[0.0, 0.5], [0.5, 0.0]])
+        cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+        cost_pot, pot_G = _emd_l1_via_pot(h1, h2, return_matrix=True)
+
+        pot_G_dense = pot_G.toarray() if scipy.sparse.issparse(pot_G) else pot_G
+        our_G_dense = plan.toarray() if scipy.sparse.issparse(plan) else plan
+
+        assert cost == pytest.approx(cost_pot)
+        assert plan.nnz == pot_G.nnz
+        assert np.allclose(our_G_dense, pot_G_dense, atol=1e-5, rtol=1e-5)

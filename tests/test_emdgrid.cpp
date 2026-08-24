@@ -158,6 +158,58 @@ TEST_CASE("emd_l1 2D: unit shift along one axis costs 1") {
   CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(1.0));
 }
 
+TEST_CASE("emd_l1 1D: transport plan computation") {
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+
+  emdgrid::SparseTransportPlan plan;
+  double cost = emdgrid::emd_l1(h1, h2, &plan);
+
+  CHECK(cost == doctest::Approx(2.0));
+  REQUIRE_EQ(plan.source.size(), 1);
+  REQUIRE_EQ(plan.target.size(), 1);
+  REQUIRE_EQ(plan.flow.size(), 1);
+  CHECK_EQ(plan.source[0], 0);
+  CHECK_EQ(plan.target[0], 2);
+  CHECK(plan.flow[0] == doctest::Approx(1.0));
+}
+
+TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0, 1.0};
+  const std::vector<double> h2v = {0.0, 1.0, 1.0, 0.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  emdgrid::SparseTransportPlan plan;
+  double cost = emdgrid::emd_l1(h1, h2, &plan);
+  CHECK(cost == doctest::Approx(2.0));
+
+  double reconstructed_cost = 0.0;
+  double total_flow = 0.0;
+
+  for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+    uint32_t src = plan.source[k];
+    uint32_t tgt = plan.target[k];
+    double f = plan.flow[k];
+    CHECK(f > 0.0);
+    total_flow += f;
+
+    auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
+    auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
+    using std::abs;
+    double l1_dist = static_cast<double>(abs(c_src[0] - c_tgt[0]) +
+                                         abs(c_src[1] - c_tgt[1]));
+    reconstructed_cost += f * l1_dist;
+  }
+
+  CHECK(total_flow == doctest::Approx(2.0));
+  CHECK(reconstructed_cost == doctest::Approx(cost));
+}
+
 TEST_CASE("emd_l1 2D: diagonal shift costs 2") {
   // Move one unit from (0,0) to (1,1): L1 distance = 2.
   const emdgrid::GridLayout<2> layout({2, 2});
