@@ -194,6 +194,7 @@ class TestEmdL1VsPot:
         # Verify plan properties match POT
         assert plan.nnz == pot_G.nnz
         assert plan.shape == pot_G.shape
+        assert np.allclose(our_G_dense, pot_G_dense, atol=1e-5, rtol=1e-5)
 
         # Verify plan satisfies marginal constraints H1 and H2
         assert np.sum(our_G_dense, axis=1) == pytest.approx(
