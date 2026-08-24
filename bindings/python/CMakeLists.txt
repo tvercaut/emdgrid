@@ -13,29 +13,10 @@ target_link_libraries(pyemdgrid PRIVATE emdgrid)
 if(BUILD_TESTING)
   set(PYEMDGRID_TEST_ENV "PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>")
 
-  if(USE_ASAN AND NOT MSVC AND NOT APPLE)
-    execute_process(
-      COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so
-      OUTPUT_VARIABLE ASAN_LIB_PATH
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
-    execute_process(
-      COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.so.6
-      OUTPUT_VARIABLE STDCXX_LIB_PATH
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-    set(PRELOAD_LIBS "")
-    if(EXISTS "${ASAN_LIB_PATH}")
-      list(APPEND PRELOAD_LIBS "${ASAN_LIB_PATH}")
-    endif()
-    if(EXISTS "${STDCXX_LIB_PATH}")
-      list(APPEND PRELOAD_LIBS "${STDCXX_LIB_PATH}")
-    endif()
-
-    if(PRELOAD_LIBS)
-      string(REPLACE ";" " " PRELOAD_STR "${PRELOAD_LIBS}")
-      list(APPEND PYEMDGRID_TEST_ENV "LD_PRELOAD=${PRELOAD_STR}" "ASAN_OPTIONS=detect_leaks=0")
-    else()
-      list(APPEND PYEMDGRID_TEST_ENV "ASAN_OPTIONS=detect_leaks=0")
+  if(USE_ASAN)
+    list(APPEND PYEMDGRID_TEST_ENV "ASAN_OPTIONS=detect_leaks=0")
+    if(ASAN_PRELOAD_LIBS)
+      list(APPEND PYEMDGRID_TEST_ENV "LD_PRELOAD=${ASAN_PRELOAD_LIBS}")
     endif()
   endif()
 

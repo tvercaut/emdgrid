@@ -2,23 +2,15 @@ cmake_minimum_required(VERSION 3.20)
 
 project(emdgrid LANGUAGES CXX)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 include(cmake/GitVersion.cmake)
 configure_file(
   include/emdgrid/version.hpp.in
   ${CMAKE_CURRENT_BINARY_DIR}/include/emdgrid/version.hpp
   @ONLY)
 
-option(USE_ASAN "Activate ASan compiler/linker options" OFF)
-if(USE_ASAN)
-  if(MSVC)
-    add_compile_options(/fsanitize=address)
-    add_link_options(/fsanitize=address)
-    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
-  else()
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
-    add_link_options(-fsanitize=address)
-  endif()
-endif()
+find_package(ASan)
 
 if(MSVC)
   add_compile_options(/W4)
