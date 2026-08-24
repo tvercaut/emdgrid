@@ -40,6 +40,12 @@ struct LingOkadaGridEdge {
   std::ptrdiff_t next{-1};  // next sibling in parent's child-edge linked list
 };
 
+struct NBVEdge {
+  std::ptrdiff_t eidx;
+  std::ptrdiff_t p;
+  std::ptrdiff_t c;
+};
+
 // ---------------------------------------------------------------------------
 //  Network-simplex solver
 // ---------------------------------------------------------------------------
@@ -71,7 +77,7 @@ class LingOkadaSolver {
     std::ptrdiff_t idx = static_cast<std::ptrdiff_t>(m_n_edges++);
     m_edges[idx] = {low, high, 0.0, 1, -1};
     m_is_bv[idx] = false;
-    m_nbv.push_back(idx);
+    m_nbv.push_back({idx, low, high});
   }
 
   // Run network simplex and return the EMD-L1 value.
@@ -102,7 +108,7 @@ class LingOkadaSolver {
   std::vector<LingOkadaGridNode> m_nodes;
   std::vector<LingOkadaGridEdge> m_edges;
   std::vector<bool> m_is_bv;
-  std::vector<std::ptrdiff_t> m_nbv;
+  std::vector<NBVEdge> m_nbv;
   std::size_t m_n_edges{0};
 
   // Pivot state
@@ -174,19 +180,23 @@ inline void LingOkadaSolver::update_subtree(std::ptrdiff_t start) {
   std::ptrdiff_t tail = 0;
   m_aux[tail++] = start;
 
+  const auto* edges_ptr = m_edges.data();
+  auto* nodes_ptr = m_nodes.data();
+
   while (head < tail) {
     std::ptrdiff_t u = m_aux[head++];
-    std::ptrdiff_t eidx = m_nodes[u].first_child;
+    const int u_val = nodes_ptr[u].u;
+    const int u_level = nodes_ptr[u].level;
+    std::ptrdiff_t eidx = nodes_ptr[u].first_child;
     while (eidx >= 0) {
-      std::ptrdiff_t v = m_edges[eidx].c;  // child node
-      m_nodes[v].level = m_nodes[u].level + 1;
+      std::ptrdiff_t v = edges_ptr[eidx].c;  // child node
+      nodes_ptr[v].level = u_level + 1;
       // Outward edge (u→v): u's potential is one step above v.
       // Dual condition: c_{pq} = u[p] - u[q] = 1, so u[q] = u[p] - 1.
-      m_nodes[v].u =
-          (m_edges[eidx].dir == 1) ? (m_nodes[u].u - 1)
-                                   : (m_nodes[u].u + 1);
+      nodes_ptr[v].u =
+          (edges_ptr[eidx].dir == 1) ? (u_val - 1) : (u_val + 1);
       m_aux[tail++] = v;
-      eidx = m_edges[eidx].next;
+      eidx = edges_ptr[eidx].next;
     }
   }
 }
@@ -195,20 +205,20 @@ inline bool LingOkadaSolver::is_optimal() {
   m_enter_nbv_pos = -1;
   int min_cost = 0;
 
-  for (std::size_t k = 0; k < m_nbv.size(); ++k) {
-    std::ptrdiff_t eidx = m_nbv[k];
-    const int cp = m_nodes[m_edges[eidx].p].u;
-    const int cc = m_nodes[m_edges[eidx].c].u;
-    // Reduced cost p→c: 1 - u[p] + u[c]
-    const int cost = 1 - cp + cc;
-    if (cost < min_cost) {
-      min_cost = cost;
-      m_enter_nbv_pos = static_cast<std::ptrdiff_t>(k);
-    }
-    // Reduced cost c→p: 1 + u[p] - u[c]
-    const int cost_rev = 1 + cp - cc;
-    if (cost_rev < min_cost) {
-      min_cost = cost_rev;
+  const std::size_t nbv_size = m_nbv.size();
+  const auto* nbv_ptr = m_nbv.data();
+  const auto* nodes_ptr = m_nodes.data();
+
+  for (std::size_t k = 0; k < nbv_size; ++k) {
+    const std::ptrdiff_t p = nbv_ptr[k].p;
+    const std::ptrdiff_t c = nbv_ptr[k].c;
+    const int diff = nodes_ptr[p].u - nodes_ptr[c].u;
+    const int cost_fwd = 1 - diff;
+    const int cost_rev = 1 + diff;
+    using std::min;
+    const int best_local = min(cost_fwd, cost_rev);
+    if (best_local < min_cost) {
+      min_cost = best_local;
       m_enter_nbv_pos = static_cast<std::ptrdiff_t>(k);
     }
   }
@@ -218,22 +228,23 @@ inline bool LingOkadaSolver::is_optimal() {
   }
 
   // Orient the entering edge so that flow goes p→c (dir = 1).
-  std::ptrdiff_t eidx = m_nbv[m_enter_nbv_pos];
-  const int cp = m_nodes[m_edges[eidx].p].u;
-  const int cc = m_nodes[m_edges[eidx].c].u;
+  std::ptrdiff_t eidx = m_nbv[m_enter_nbv_pos].eidx;
+  const int cp = m_nodes[m_nbv[m_enter_nbv_pos].p].u;
+  const int cc = m_nodes[m_nbv[m_enter_nbv_pos].c].u;
   // If the reversed direction gave the minimum cost, swap endpoints.
   if (min_cost == (1 + cp - cc)) {
     std::swap(m_edges[eidx].p, m_edges[eidx].c);
+    std::swap(m_nbv[m_enter_nbv_pos].p, m_nbv[m_enter_nbv_pos].c);
   }
   m_edges[eidx].dir = 1;
   return false;
 }
 
 inline void LingOkadaSolver::find_loop() {
-  // Entering edge: m_edges[m_nbv[m_enter_nbv_pos]]
+  // Entering edge: m_edges[m_nbv[m_enter_nbv_pos].eidx]
   // m_from_loop: ancestors of entering parent;
   // m_to_loop:   ancestors of entering child.
-  std::ptrdiff_t enter_eidx = m_nbv[m_enter_nbv_pos];
+  std::ptrdiff_t enter_eidx = m_nbv[m_enter_nbv_pos].eidx;
   std::ptrdiff_t from_node = m_edges[enter_eidx].p;  // entering parent
   std::ptrdiff_t to_node = m_edges[enter_eidx].c;    // entering child
 
@@ -294,14 +305,15 @@ inline void LingOkadaSolver::find_loop() {
 
   // If the leaving edge is on the from_loop side, reverse the entering edge.
   if (m_leave_flag == 0) {
-    std::ptrdiff_t eidx = m_nbv[m_enter_nbv_pos];
+    std::ptrdiff_t eidx = m_nbv[m_enter_nbv_pos].eidx;
     std::swap(m_edges[eidx].p, m_edges[eidx].c);
+    std::swap(m_nbv[m_enter_nbv_pos].p, m_nbv[m_enter_nbv_pos].c);
     m_edges[eidx].dir = 1 - m_edges[eidx].dir;
   }
 }
 
 inline void LingOkadaSolver::pivot() {
-  std::ptrdiff_t enter_eidx = m_nbv[m_enter_nbv_pos];
+  std::ptrdiff_t enter_eidx = m_nbv[m_enter_nbv_pos].eidx;
   const double min_flow = m_edges[m_leave_edge].flow;
 
   // Update flows along the loop
@@ -337,7 +349,8 @@ inline void LingOkadaSolver::pivot() {
 
   // Put leaving edge into NBV list in place of the entering edge
   m_is_bv[m_leave_edge] = false;
-  m_nbv[m_enter_nbv_pos] = m_leave_edge;
+  m_nbv[m_enter_nbv_pos] = {m_leave_edge, m_edges[m_leave_edge].p,
+                            m_edges[m_leave_edge].c};
 
   // Add entering edge to BV as first child of its parent
   m_is_bv[enter_eidx] = true;
@@ -408,8 +421,9 @@ inline double LingOkadaSolver::solve(std::ptrdiff_t root, int max_iter) {
       break;
     }
     find_loop();
-    // Save the entering child before pivot() replaces m_nbv[m_enter_nbv_pos].
-    const std::ptrdiff_t enter_child = m_edges[m_nbv[m_enter_nbv_pos]].c;
+    // Save entering child before pivot() replaces m_nbv[m_enter_nbv_pos].
+    const std::ptrdiff_t enter_child =
+        m_edges[m_nbv[m_enter_nbv_pos].eidx].c;
     pivot();
     // Only the reattached subtree needs its potentials refreshed.
     update_subtree(enter_child);

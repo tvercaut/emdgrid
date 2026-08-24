@@ -141,23 +141,6 @@ template <std::size_t Dim, std::floating_point Scalar,
         static_cast<double>(d);
   }
 
-  // prefix[a][k] = -(sum of demand[i] for all i with coord[a] < k),
-  // maintained during the sweep.  Initialised from the original demands.
-  std::vector<std::vector<CompScalar>> prefix(Dim);
-  for (std::size_t a = 0; a < Dim; ++a) {
-    prefix[a].assign(shape[a], CompScalar{0});
-    // Compute per-slice sums first
-    std::vector<CompScalar> slice(shape[a], CompScalar{0});
-    for (std::size_t i = 0; i < n_nodes; ++i) {
-      auto coord = layout.coordinates(static_cast<std::ptrdiff_t>(i));
-      slice[static_cast<std::size_t>(coord[a])] += demand[i];
-    }
-    // Build prefix sums: prefix[a][k] = -(sum of slice[0..k-1])
-    for (std::size_t k = 0; k + 1 < shape[a]; ++k) {
-      prefix[a][k + 1] = prefix[a][k] - slice[k];
-    }
-  }
-
   // Strides: stride[a] = product of shape[a+1..Dim-1]
   std::array<std::ptrdiff_t, Dim> stride{};
   stride[Dim - 1] = 1;
@@ -166,11 +149,34 @@ template <std::size_t Dim, std::floating_point Scalar,
         stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
   }
 
+  // Cache coordinates during initial sweep to avoid calling
+  // layout.coordinates() repeatedly.
+  std::vector<typename GridLayout<Dim>::Coordinates> coords(n_nodes);
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    coords[i] = layout.coordinates(static_cast<std::ptrdiff_t>(i));
+  }
+
+  // prefix[a][k] = -(sum of demand[i] for all i with coord[a] < k),
+  // maintained during the sweep.  Initialised from the original demands.
+  std::vector<std::vector<CompScalar>> prefix(Dim);
+  for (std::size_t a = 0; a < Dim; ++a) {
+    prefix[a].assign(shape[a], CompScalar{0});
+    // Compute per-slice sums first
+    std::vector<CompScalar> slice(shape[a], CompScalar{0});
+    for (std::size_t i = 0; i < n_nodes; ++i) {
+      slice[static_cast<std::size_t>(coords[i][a])] += demand[i];
+    }
+    // Build prefix sums: prefix[a][k] = -(sum of slice[0..k-1])
+    for (std::size_t k = 0; k + 1 < shape[a]; ++k) {
+      prefix[a][k + 1] = prefix[a][k] - slice[k];
+    }
+  }
+
   // Sweep nodes 0 .. N-2 in lexicographic (flat) order
   for (std::ptrdiff_t i = 0;
        i < static_cast<std::ptrdiff_t>(n_nodes) - 1; ++i) {
-    auto coord = layout.coordinates(i);
-    const CompScalar d_i = demand[i];
+    const auto& coord = coords[static_cast<std::size_t>(i)];
+    const CompScalar d_i = demand[static_cast<std::size_t>(i)];
 
     // Choose the axis that minimises |d_i + prefix[a][coord[a]+1]|
     std::size_t best_axis = Dim;  // sentinel
