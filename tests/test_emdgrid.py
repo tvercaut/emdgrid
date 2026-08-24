@@ -133,6 +133,46 @@ class TestEmdL1Binding:
         assert plan.sum() == pytest.approx(2.0)
 
 
+class TestGreedyEmdL1ApproxBinding:
+    """Basic correctness tests exercised via the Python binding for greedy_emd_l1_approx."""
+
+    def test_1d_identical_histograms_zero(self):
+        h = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+        assert pyemdgrid.greedy_emd_l1_approx(h, h) == pytest.approx(0.0)
+
+    def test_2d_identical_histograms_zero(self):
+        h = np.full((3, 3), 1.0 / 9)
+        assert pyemdgrid.greedy_emd_l1_approx(h, h) == pytest.approx(0.0)
+
+    def test_2d_upper_bound(self):
+        h1 = np.array([[0.5, 0.5], [0.0, 0.0]])
+        h2 = np.array([[0.0, 0.0], [0.5, 0.5]])
+        approx_cost = pyemdgrid.greedy_emd_l1_approx(h1, h2)
+        exact_cost = pyemdgrid.emd_l1(h1, h2)
+        assert exact_cost == pytest.approx(1.0)
+        assert approx_cost >= exact_cost
+
+    def test_return_transport_plan_option(self):
+        h1 = np.array([[1.0, 0.0], [0.0, 1.0]])
+        h2 = np.array([[0.0, 1.0], [1.0, 0.0]])
+        cost, plan = pyemdgrid.greedy_emd_l1_approx(h1, h2, return_transport_plan=True)
+        assert cost == pytest.approx(2.0)
+        assert scipy.sparse.issparse(plan)
+        assert plan.shape == (4, 4)
+        assert plan.sum() == pytest.approx(2.0)
+
+    def test_shape_mismatch_raises(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 0.0, 1.0])
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.greedy_emd_l1_approx(h1, h2)
+
+    def test_unsupported_ndim_raises(self):
+        h = np.ones((2, 2, 2, 2)) / 16.0
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.greedy_emd_l1_approx(h, h)
+
+
 # ---------------------------------------------------------------------------
 # Cross-validation against POT
 # ---------------------------------------------------------------------------

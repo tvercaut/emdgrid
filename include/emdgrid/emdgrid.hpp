@@ -3,6 +3,7 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <span>
 #include <stdexcept>
@@ -132,5 +133,12 @@ class GridDataView {
 };
 
 [[nodiscard]] std::string_view version() noexcept;
+
+/// Sparse transport plan represented in Coordinate (COO) format.
+struct SparseTransportPlan {
+  std::vector<uint32_t> source;
+  std::vector<uint32_t> target;
+  std::vector<double> flow;
+};
 
 }  // namespace emdgrid
