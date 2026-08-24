@@ -73,17 +73,6 @@ if(USE_ASAN)
       list(APPEND PRELOAD_LIBS "${ASAN_LIBRARY}")
     endif()
 
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-      execute_process(
-        COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.so.6
-        OUTPUT_VARIABLE STDCPP_LIBRARY
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-      )
-      if(STDCPP_LIBRARY AND NOT STDCPP_LIBRARY STREQUAL "libstdc++.so.6")
-        list(APPEND PRELOAD_LIBS "${STDCPP_LIBRARY}")
-      endif()
-    endif()
-
     if(PRELOAD_LIBS)
       string(REPLACE ";" " " PRELOAD_STR "${PRELOAD_LIBS}")
       set(ASAN_PRELOAD_LIBS "${PRELOAD_STR}" CACHE INTERNAL
