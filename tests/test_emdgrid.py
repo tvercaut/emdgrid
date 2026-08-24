@@ -185,8 +185,13 @@ class TestEmdL1VsPot:
 
         n_nodes = int(np.prod(shape))
         _, log = ot.emd2_lazy(
-            coords, coords, h1.ravel(), h2.ravel(),
-            metric="cityblock", log=True, return_matrix=True
+            coords,
+            coords,
+            h1.ravel(),
+            h2.ravel(),
+            metric="cityblock",
+            log=True,
+            return_matrix=True,
         )
         pot_G = log["G"]
         if scipy.sparse.issparse(pot_G):
