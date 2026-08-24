@@ -11,7 +11,7 @@ if(USE_ASAN)
   )
 
   if(NOT ASAN_LIBRARY)
-    message(WARNING
+    message(STATUS
       "find_library() could not locate an ASan runtime. "
       "Falling back to compiler-provided location."
     )
