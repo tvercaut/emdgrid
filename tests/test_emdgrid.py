@@ -185,10 +185,15 @@ class TestEmdL1VsPot:
         cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
         cost_pot, pot_G = _emd_l1_via_pot(h1, h2, return_matrix=True)
 
+        pot_G_dense = pot_G.toarray() if scipy.sparse.issparse(pot_G) else pot_G
         our_G_dense = plan.toarray() if scipy.sparse.issparse(plan) else plan
 
         # Verify cost equality with EMD-L1 solver and POT
         assert cost == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
+
+        # Verify plan properties match POT
+        assert plan.nnz == pot_G.nnz
+        assert plan.shape == pot_G.shape
 
         # Verify plan satisfies marginal constraints H1 and H2
         assert np.sum(our_G_dense, axis=1) == pytest.approx(
@@ -197,3 +202,17 @@ class TestEmdL1VsPot:
         assert np.sum(our_G_dense, axis=0) == pytest.approx(
             h2.ravel(), rel=1e-5, abs=1e-8
         )
+
+    def test_transport_plan_exact_match_pot_2d(self):
+        """Test exact element-wise transport plan match with POT on 2D grid."""
+        h1 = np.array([[0.5, 0.0], [0.0, 0.5]])
+        h2 = np.array([[0.0, 0.5], [0.5, 0.0]])
+        cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+        cost_pot, pot_G = _emd_l1_via_pot(h1, h2, return_matrix=True)
+
+        pot_G_dense = pot_G.toarray() if scipy.sparse.issparse(pot_G) else pot_G
+        our_G_dense = plan.toarray() if scipy.sparse.issparse(plan) else plan
+
+        assert cost == pytest.approx(cost_pot)
+        assert plan.nnz == pot_G.nnz
+        assert np.allclose(our_G_dense, pot_G_dense, atol=1e-5, rtol=1e-5)
