@@ -24,8 +24,11 @@ if(BUILD_TESTING)
       ${Python3_EXECUTABLE} -c
       "import pyemdgrid; assert pyemdgrid.version() == '${EMDGRID_GIT_VERSION}'")
 
-  find_program(PYTEST_EXE NAMES pytest pytest3)
-  if(PYTEST_EXE)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import pytest"
+    RESULT_VARIABLE PYTEST_MODULE_RESULT
+    OUTPUT_QUIET ERROR_QUIET)
+  if(PYTEST_MODULE_RESULT EQUAL 0)
     add_test(
       NAME pyemdgrid_pytest
       COMMAND
