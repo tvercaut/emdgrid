@@ -1,0 +1,5 @@
+if(EXISTS "/app/build_tidy/tests/utils_tests_tests-b858cb2.cmake")
+  include("/app/build_tidy/tests/utils_tests_tests-b858cb2.cmake")
+else()
+  add_test(utils_tests_NOT_BUILT-b858cb2 utils_tests_NOT_BUILT-b858cb2)
+endif()

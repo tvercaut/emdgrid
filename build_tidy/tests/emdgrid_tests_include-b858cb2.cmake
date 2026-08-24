@@ -1,0 +1,5 @@
+if(EXISTS "/app/build_tidy/tests/emdgrid_tests_tests-b858cb2.cmake")
+  include("/app/build_tidy/tests/emdgrid_tests_tests-b858cb2.cmake")
+else()
+  add_test(emdgrid_tests_NOT_BUILT-b858cb2 emdgrid_tests_NOT_BUILT-b858cb2)
+endif()

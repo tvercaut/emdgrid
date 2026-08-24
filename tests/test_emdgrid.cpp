@@ -205,12 +205,15 @@ TEST_CASE(
 
   double reconstructed_cost = 0.0;
   double total_flow = 0.0;
+  bool all_positive = true;
 
   for (std::size_t k = 0; k < plan.flow.size(); ++k) {
     uint32_t src = plan.source[k];
     uint32_t tgt = plan.target[k];
     double f = plan.flow[k];
-    CHECK(f > 0.0);
+    if (f <= 0.0) {
+      all_positive = false;
+    }
     total_flow += f;
 
     auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
@@ -221,6 +224,7 @@ TEST_CASE(
     reconstructed_cost += f * l1_dist;
   }
 
+  CHECK(all_positive);
   CHECK(total_flow == doctest::Approx(2.0));
   CHECK(reconstructed_cost == doctest::Approx(approx_cost));
 }
@@ -268,12 +272,15 @@ TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
 
   double reconstructed_cost = 0.0;
   double total_flow = 0.0;
+  bool all_positive = true;
 
   for (std::size_t k = 0; k < plan.flow.size(); ++k) {
     uint32_t src = plan.source[k];
     uint32_t tgt = plan.target[k];
     double f = plan.flow[k];
-    CHECK(f > 0.0);
+    if (f <= 0.0) {
+      all_positive = false;
+    }
     total_flow += f;
 
     auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
@@ -284,6 +291,7 @@ TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
     reconstructed_cost += f * l1_dist;
   }
 
+  CHECK(all_positive);
   CHECK(total_flow == doctest::Approx(2.0));
   CHECK(reconstructed_cost == doctest::Approx(cost));
 }
