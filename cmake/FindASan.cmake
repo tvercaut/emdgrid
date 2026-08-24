@@ -1,7 +1,57 @@
 option(USE_ASAN "Activate ASan compiler/linker options" OFF)
 
 if(USE_ASAN)
-  find_library(ASAN_LIBRARY NAMES asan libasan)
+  find_library(
+    ASAN_LIBRARY
+    NAMES
+      asan
+      libasan
+      libclang_rt.asan-x86_64
+      libclang_rt.asan-aarch64
+  )
+
+  if(NOT ASAN_LIBRARY)
+    message(WARNING
+      "find_library() could not locate an ASan runtime. "
+      "Falling back to compiler-provided location."
+    )
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so
+        OUTPUT_VARIABLE ASAN_LIBRARY
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+
+      # GCC returns the argument unchanged on failure.
+      if(ASAN_LIBRARY STREQUAL "libasan.so")
+        unset(ASAN_LIBRARY)
+      endif()
+
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-runtime-dir
+        OUTPUT_VARIABLE CLANG_RUNTIME_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+
+      find_library(
+        ASAN_LIBRARY
+        NAMES
+          libclang_rt.asan-x86_64
+          libclang_rt.asan-aarch64
+        PATHS ${CLANG_RUNTIME_DIR}
+        NO_DEFAULT_PATH
+      )
+    endif()
+  endif()
+
+  if(NOT ASAN_LIBRARY)
+    message(FATAL_ERROR
+      "Unable to locate the AddressSanitizer runtime."
+    )
+  endif()
+
   message(STATUS "Using ASAN_LIBRARY: ${ASAN_LIBRARY}")
   
   if(MSVC)
