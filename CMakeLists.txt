@@ -2,11 +2,15 @@ cmake_minimum_required(VERSION 3.20)
 
 project(emdgrid LANGUAGES CXX)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 include(cmake/GitVersion.cmake)
 configure_file(
   include/emdgrid/version.hpp.in
   ${CMAKE_CURRENT_BINARY_DIR}/include/emdgrid/version.hpp
   @ONLY)
+
+find_package(ASan)
 
 if(MSVC)
   add_compile_options(/W4)

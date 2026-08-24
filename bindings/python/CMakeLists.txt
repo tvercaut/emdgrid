@@ -11,10 +11,16 @@ pybind11_add_module(pyemdgrid pyemdgrid.cpp)
 target_link_libraries(pyemdgrid PRIVATE emdgrid)
 
 if(BUILD_TESTING)
+  set(PYEMDGRID_TEST_ENV "PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>")
+
+  if(USE_ASAN AND ASAN_PRELOAD_LIBS)
+    list(APPEND PYEMDGRID_TEST_ENV "LD_PRELOAD=${ASAN_PRELOAD_LIBS}")
+  endif()
+
   add_test(
     NAME pyemdgrid_import
     COMMAND
-      ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>
+      ${CMAKE_COMMAND} -E env ${PYEMDGRID_TEST_ENV}
       ${Python3_EXECUTABLE} -c
       "import pyemdgrid; assert pyemdgrid.version() == '${EMDGRID_GIT_VERSION}'")
 
@@ -23,7 +29,7 @@ if(BUILD_TESTING)
     add_test(
       NAME pyemdgrid_pytest
       COMMAND
-        ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>
+        ${CMAKE_COMMAND} -E env ${PYEMDGRID_TEST_ENV}
         ${Python3_EXECUTABLE} -m pytest
         ${CMAKE_SOURCE_DIR}/tests/test_emdgrid.py -v)
   endif()

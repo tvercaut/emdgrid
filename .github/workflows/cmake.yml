@@ -16,10 +16,13 @@ jobs:
         include:
         - os: ubuntu-latest
           build_python_bindings: ON
+          use_asan: ON
         - os: windows-latest
           build_python_bindings: OFF
+          use_asan: OFF
         - os: macos-latest
           build_python_bindings: OFF
+          use_asan: OFF
 
     runs-on: ${{ matrix.os }}
 
@@ -46,7 +49,7 @@ jobs:
       run: echo "::add-matcher::.github/clang-tidy-matcher.json"
 
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} .
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
