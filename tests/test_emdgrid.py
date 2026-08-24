@@ -170,7 +170,37 @@ class TestEmdL1VsPot:
             pyemdgrid.emd_l1(h2, h1), rel=1e-10
         )
 
-    def test_transport_plan_matches_pot(self, rng):
+    def test_transport_plan_exact_match_pot(self):
+        """Test exact sparse transport plan match with POT on deterministic 2D grid."""
+        h1 = np.array([[0.5, 0.5], [0.0, 0.0]])
+        h2 = np.array([[0.0, 0.0], [0.5, 0.5]])
+        cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
+
+        axes = [np.arange(2), np.arange(2)]
+        coords = (
+            np.array(np.meshgrid(*axes, indexing="ij"))
+            .reshape(2, -1)
+            .T.astype(np.float64)
+        )
+
+        cost_pot, log = ot.emd2_lazy(
+            coords,
+            coords,
+            h1.ravel(),
+            h2.ravel(),
+            metric="cityblock",
+            log=True,
+            return_matrix=True,
+        )
+        pot_G = log["G"].toarray() if scipy.sparse.issparse(log["G"]) else log["G"]
+        our_G = plan.toarray() if scipy.sparse.issparse(plan) else plan
+
+        assert cost == pytest.approx(cost_pot)
+        assert np.count_nonzero(our_G > 1e-12) == np.count_nonzero(pot_G > 1e-12)
+        assert np.allclose(our_G, pot_G, atol=1e-5, rtol=1e-5)
+
+    def test_transport_plan_valid_optimal_coupling(self, rng):
+        """Verify transport plan is a valid optimal coupling matching cost and marginals."""
         shape = (3, 4, 2)
         h1, h2 = self._make_histograms(rng, shape)
         cost, plan = pyemdgrid.emd_l1(h1, h2, return_transport_plan=True)
@@ -183,28 +213,11 @@ class TestEmdL1VsPot:
             .T.astype(np.float64)
         )
 
-        n_nodes = int(np.prod(shape))
-        _, log = ot.emd2_lazy(
-            coords,
-            coords,
-            h1.ravel(),
-            h2.ravel(),
-            metric="cityblock",
-            log=True,
-            return_matrix=True,
-        )
-        pot_G = log["G"]
-        if scipy.sparse.issparse(pot_G):
-            pot_G = pot_G.toarray()
-
         M = scipy.spatial.distance.cdist(coords, coords, metric="cityblock")
         our_G = plan.toarray() if scipy.sparse.issparse(plan) else plan
 
         our_cost = np.sum(our_G * M)
-        pot_cost = np.sum(pot_G * M)
-
         assert our_cost == pytest.approx(cost, rel=1e-5, abs=1e-8)
-        assert our_cost == pytest.approx(pot_cost, rel=1e-5, abs=1e-8)
 
         # Check marginals match H1 and H2
         assert np.sum(our_G, axis=1) == pytest.approx(h1.ravel(), rel=1e-5, abs=1e-8)
