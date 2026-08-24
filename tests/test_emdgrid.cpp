@@ -203,6 +203,8 @@ TEST_CASE(
   emdgrid::SparseTransportPlan plan;
   double approx_cost = emdgrid::greedy_emd_l1_approx(h1, h2, &plan);
 
+  REQUIRE(!plan.flow.empty());
+
   double reconstructed_cost = 0.0;
   double total_flow = 0.0;
   bool all_positive = true;
@@ -269,6 +271,8 @@ TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
   emdgrid::SparseTransportPlan plan;
   double cost = emdgrid::emd_l1(h1, h2, &plan);
   CHECK(cost == doctest::Approx(2.0));
+
+  REQUIRE(!plan.flow.empty());
 
   double reconstructed_cost = 0.0;
   double total_flow = 0.0;
