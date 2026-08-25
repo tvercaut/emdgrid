@@ -1,0 +1,33 @@
+[build-system]
+requires = ["scikit-build-core>=0.8.0", "pybind11>=2.10.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pyemdgrid"
+version = "0.1.0"
+description = "Python bindings for emdgrid: Fast and exact optimal transport solvers for discrete histograms on regular grids"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Tom Vercauteren"}
+]
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "scipy",
+    "POT",
+]
+
+[tool.scikit-build]
+cmake.args = [
+    "-DEMDGRID_BUILD_PYTHON_BINDINGS=ON",
+    "-DBUILD_TESTING=OFF",
+    "-DEMDGRID_BUILD_EXAMPLES=OFF",
+    "-DCLANG_TIDY_EXE=OFF",
+]
+wheel.packages = []

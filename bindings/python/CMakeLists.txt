@@ -10,6 +10,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(pybind11)
 
 pybind11_add_module(pyemdgrid pyemdgrid.cpp)
+install(TARGETS pyemdgrid DESTINATION .)
 target_link_libraries(pyemdgrid PRIVATE emdgrid)
 
 if(BUILD_TESTING)
