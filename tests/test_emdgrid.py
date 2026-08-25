@@ -133,6 +133,51 @@ class TestEmdL1Binding:
         assert plan.sum() == pytest.approx(2.0)
 
 
+class TestEmdSqeuclidean1dBinding:
+    """Basic correctness tests for emd_sqeuclidean_1d via Python binding."""
+
+    def test_1d_identical_histograms_zero(self):
+        h = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+        assert pyemdgrid.emd_sqeuclidean_1d(h, h) == pytest.approx(0.0)
+
+    def test_1d_unit_shift_one_bin(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 1.0, 0.0])
+        assert pyemdgrid.emd_sqeuclidean_1d(h1, h2) == pytest.approx(1.0)
+
+    def test_1d_unit_shift_two_bins(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 1.0])
+        assert pyemdgrid.emd_sqeuclidean_1d(h1, h2) == pytest.approx(4.0)
+
+    def test_1d_symmetry(self):
+        h1 = np.array([0.5, 0.5, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 0.5, 0.5])
+        assert pyemdgrid.emd_sqeuclidean_1d(h1, h2) == pytest.approx(
+            pyemdgrid.emd_sqeuclidean_1d(h2, h1)
+        )
+
+    def test_shape_mismatch_raises(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 0.0, 1.0])
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.emd_sqeuclidean_1d(h1, h2)
+
+    def test_unsupported_ndim_raises(self):
+        h = np.ones((2, 2)) / 4.0
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.emd_sqeuclidean_1d(h, h)
+
+    def test_return_transport_plan_option(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 1.0])
+        cost, plan = pyemdgrid.emd_sqeuclidean_1d(h1, h2, return_transport_plan=True)
+        assert cost == pytest.approx(4.0)
+        assert scipy.sparse.issparse(plan)
+        assert plan.shape == (3, 3)
+        assert plan.sum() == pytest.approx(1.0)
+
+
 class TestGreedyEmdL1ApproxBinding:
     """Basic correctness tests exercised via the Python binding for greedy_emd_l1_approx."""
 
@@ -262,3 +307,25 @@ class TestEmdL1VsPot:
         assert cost == pytest.approx(cost_pot)
         assert plan.nnz == pot_G.nnz
         assert np.allclose(our_G_dense, pot_G_dense, atol=1e-5, rtol=1e-5)
+
+
+class TestEmdSqeuclidean1dVsPot:
+    """Compare pyemdgrid.emd_sqeuclidean_1d against POT's ot.emd2 for 1-D grids."""
+
+    @pytest.fixture()
+    def rng(self):
+        return np.random.default_rng(42)
+
+    @pytest.mark.parametrize("n_bins", [5, 10, 25, 100])
+    def test_agrees_with_pot(self, rng, n_bins):
+        raw1 = rng.standard_normal(n_bins)
+        raw2 = rng.standard_normal(n_bins)
+        h1 = scipy.special.softmax(raw1)
+        h2 = scipy.special.softmax(raw2)
+
+        cost_our = pyemdgrid.emd_sqeuclidean_1d(h1, h2)
+
+        M = (np.arange(n_bins)[:, None] - np.arange(n_bins)[None, :]) ** 2
+        cost_pot = ot.emd2(h1, h2, M.astype(np.float64))
+
+        assert cost_our == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
