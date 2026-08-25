@@ -220,9 +220,8 @@ TEST_CASE(
 
     auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
     auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
-    using std::abs;
-    double l1_dist = static_cast<double>(abs(c_src[0] - c_tgt[0]) +
-                                         abs(c_src[1] - c_tgt[1]));
+    double l1_dist = static_cast<double>(std::abs(c_src[0] - c_tgt[0]) +
+                                         std::abs(c_src[1] - c_tgt[1]));
     reconstructed_cost += f * l1_dist;
   }
 
@@ -289,9 +288,8 @@ TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
 
     auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
     auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
-    using std::abs;
-    double l1_dist = static_cast<double>(abs(c_src[0] - c_tgt[0]) +
-                                         abs(c_src[1] - c_tgt[1]));
+    double l1_dist = static_cast<double>(std::abs(c_src[0] - c_tgt[0]) +
+                                         std::abs(c_src[1] - c_tgt[1]));
     reconstructed_cost += f * l1_dist;
   }
 

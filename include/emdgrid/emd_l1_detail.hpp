@@ -603,8 +603,7 @@ void greedy_init(const GridDataView<Dim, Scalar>& h1,
     for (std::size_t a = 0; a < Dim; ++a) {
       const std::size_t k = static_cast<std::size_t>(coord[a]);
       if (k + 1 < shape[a]) {
-        using std::abs;
-        const CompScalar cost = abs(d_i + prefix[a][k + 1]);
+        const CompScalar cost = std::abs(d_i + prefix[a][k + 1]);
         if (cost < best_cost) {
           best_cost = cost;
           best_axis = a;
@@ -617,9 +616,8 @@ void greedy_init(const GridDataView<Dim, Scalar>& h1,
 
     // BV edge: i → neighbour
     const int bv_dir = (d_i > CompScalar{0}) ? 1 : 0;
-    using std::abs;
     solver.register_bv(i, neighbour,
-                       static_cast<double>(abs(d_i)), bv_dir);
+                       static_cast<double>(std::abs(d_i)), bv_dir);
 
     // Update working arrays
     demand[static_cast<std::size_t>(neighbour)] += d_i;
