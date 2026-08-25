@@ -127,7 +127,7 @@ template <std::size_t Dim, std::floating_point Scalar,
           v[x] /= sum_v;
         }
 
-        detail::compute_monotone_matching(u, v, &matching);
+        detail::compute_1d_monotone_matching(u, v, &matching);
 
         for (const auto& flow_pair : matching) {
           const double branch_mass = task.mass * flow_pair.flow;
@@ -214,7 +214,7 @@ template <std::size_t Dim, std::floating_point Scalar,
         v[x] /= sum_v;
       }
 
-      detail::compute_monotone_matching(u, v, &matching);
+      detail::compute_1d_monotone_matching(u, v, &matching);
 
       for (const auto& flow_pair : matching) {
         const double branch_mass = task.mass * flow_pair.flow;

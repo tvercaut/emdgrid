@@ -4,9 +4,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
+#include "emdgrid/emd_1d.hpp"
 #include "emdgrid/emdgrid.hpp"
 
 namespace emdgrid {
@@ -23,53 +25,6 @@ struct KrTask {
   std::size_t tgt_base_offset{0};
   double mass{0.0};
 };
-
-/// Active 1-D monotone matching flow triple.
-struct MonotoneFlow {
-  std::size_t src_idx{0};
-  std::size_t tgt_idx{0};
-  double flow{0.0};
-};
-
-/// Computes 1-D monotone transport matching between two 1-D probability
-/// distributions u and v (both assumed non-negative and normalized to sum 1).
-inline void compute_monotone_matching(
-    const std::vector<double>& u, const std::vector<double>& v,
-    std::vector<MonotoneFlow>* matching) {
-  matching->clear();
-  std::size_t i = 0;
-  std::size_t j = 0;
-  const std::size_t n_u = u.size();
-  const std::size_t n_v = v.size();
-  if (n_u == 0 || n_v == 0) {
-    return;
-  }
-
-  double rem_u = u[0];
-  double rem_v = v[0];
-  constexpr double kEps = 1e-12;
-
-  while (i < n_u && j < n_v) {
-    if (rem_u <= kEps) {
-      ++i;
-      if (i < n_u) {
-        rem_u = u[i];
-      }
-      continue;
-    }
-    if (rem_v <= kEps) {
-      ++j;
-      if (j < n_v) {
-        rem_v = v[j];
-      }
-      continue;
-    }
-    const double transfer = std::min(rem_u, rem_v);
-    matching->push_back({i, j, transfer});
-    rem_u -= transfer;
-    rem_v -= transfer;
-  }
-}
 
 /// Compute C-order linear strides for a grid shape.
 template <std::size_t Dim>
