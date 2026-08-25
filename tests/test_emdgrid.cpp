@@ -8,6 +8,7 @@
 
 #include "emdgrid/emd_l1.hpp"
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/greedy_emd_l1.hpp"
 #include "emdgrid/version.hpp"
 
 TEST_CASE("library version matches generated version") {
@@ -158,6 +159,92 @@ TEST_CASE("emd_l1 2D: unit shift along one axis costs 1") {
   CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(1.0));
 }
 
+// ============================================================================
+//  greedy_emd_l1_approx tests
+// ============================================================================
+
+TEST_CASE("greedy_emd_l1_approx 1D: identical histograms give zero") {
+  const emdgrid::GridLayout<1> layout({5});
+  const std::vector<double> v = {0.1, 0.2, 0.4, 0.2, 0.1};
+  const emdgrid::GridDataView<1, double> h(layout, std::span(v));
+  CHECK(emdgrid::greedy_emd_l1_approx(h, h) == doctest::Approx(0.0));
+}
+
+TEST_CASE("greedy_emd_l1_approx 2D: identical histograms give zero") {
+  const emdgrid::GridLayout<2> layout({3, 3});
+  const std::vector<double> v(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h(layout, std::span(v));
+  CHECK(emdgrid::greedy_emd_l1_approx(h, h) == doctest::Approx(0.0));
+}
+
+TEST_CASE("greedy_emd_l1_approx 2D: produces valid upper bound") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {0.5, 0.5, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 0.5, 0.5};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  double exact_cost = emdgrid::emd_l1(h1, h2);
+  double approx_cost = emdgrid::greedy_emd_l1_approx(h1, h2);
+
+  CHECK(exact_cost == doctest::Approx(1.0));
+  CHECK(approx_cost >= exact_cost);
+}
+
+TEST_CASE(
+    "greedy_emd_l1_approx 2D: transport plan computation and cost "
+    "reconstruction") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0, 1.0};
+  const std::vector<double> h2v = {0.0, 1.0, 1.0, 0.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  emdgrid::SparseTransportPlan plan;
+  double approx_cost = emdgrid::greedy_emd_l1_approx(h1, h2, &plan);
+
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+  REQUIRE(!plan.flow.empty());
+
+  double reconstructed_cost = 0.0;
+  double total_flow = 0.0;
+  bool all_positive = true;
+
+  for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+    uint32_t src = plan.source[k];
+    uint32_t tgt = plan.target[k];
+    double f = plan.flow[k];
+    if (f <= 0.0) {
+      all_positive = false;
+    }
+    total_flow += f;
+
+    auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
+    auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
+    double l1_dist = static_cast<double>(std::abs(c_src[0] - c_tgt[0]) +
+                                         std::abs(c_src[1] - c_tgt[1]));
+    reconstructed_cost += f * l1_dist;
+  }
+
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+  CHECK(all_positive);
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+  CHECK(total_flow == doctest::Approx(2.0));
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+  CHECK(reconstructed_cost == doctest::Approx(approx_cost));
+}
+
+TEST_CASE("greedy_emd_l1_approx 2D: shape mismatch throws") {
+  const emdgrid::GridLayout<2> layout2({2, 2});
+  const emdgrid::GridLayout<2> layout3({3, 3});
+  const std::vector<double> v4(4, 0.25);
+  const std::vector<double> v9(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h4(layout2, std::span(v4));
+  const emdgrid::GridDataView<2, double> h9(layout3, std::span(v9));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::greedy_emd_l1_approx(h4, h9)),
+                  std::invalid_argument);
+}
+
 TEST_CASE("emd_l1 1D: transport plan computation") {
   const emdgrid::GridLayout<1> layout({3});
   const std::vector<double> h1v = {1.0, 0.0, 0.0};
@@ -186,27 +273,37 @@ TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
 
   emdgrid::SparseTransportPlan plan;
   double cost = emdgrid::emd_l1(h1, h2, &plan);
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   CHECK(cost == doctest::Approx(2.0));
+
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+  REQUIRE(!plan.flow.empty());
 
   double reconstructed_cost = 0.0;
   double total_flow = 0.0;
+  bool all_positive = true;
 
   for (std::size_t k = 0; k < plan.flow.size(); ++k) {
     uint32_t src = plan.source[k];
     uint32_t tgt = plan.target[k];
     double f = plan.flow[k];
-    CHECK(f > 0.0);
+    if (f <= 0.0) {
+      all_positive = false;
+    }
     total_flow += f;
 
     auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
     auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
-    using std::abs;
-    double l1_dist = static_cast<double>(abs(c_src[0] - c_tgt[0]) +
-                                         abs(c_src[1] - c_tgt[1]));
+    double l1_dist = static_cast<double>(std::abs(c_src[0] - c_tgt[0]) +
+                                         std::abs(c_src[1] - c_tgt[1]));
     reconstructed_cost += f * l1_dist;
   }
 
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+  CHECK(all_positive);
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   CHECK(total_flow == doctest::Approx(2.0));
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   CHECK(reconstructed_cost == doctest::Approx(cost));
 }
 

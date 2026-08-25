@@ -1,11 +1,15 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <utility>
 #include <vector>
+
+#include "emdgrid/emdgrid.hpp"
 
 namespace emdgrid {
 
@@ -97,13 +101,22 @@ class LingOkadaSolver {
     return flows;
   }
 
+  [[nodiscard]] double total_flow() const {
+    double total = 0.0;
+    for (std::size_t e = 0; e < m_n_edges; ++e) {
+      if (m_is_bv[e]) {
+        total += m_edges[e].flow;
+      }
+    }
+    return total;
+  }
+
  private:
   void init_bv_tree(std::ptrdiff_t root);
   void update_subtree(std::ptrdiff_t start);
   bool is_optimal();
   void find_loop();
   void pivot();
-  double total_flow() const;
 
   std::vector<LingOkadaGridNode> m_nodes;
   std::vector<LingOkadaGridEdge> m_edges;
@@ -402,16 +415,6 @@ inline void LingOkadaSolver::pivot() {
   m_nodes[enter_child].level = m_nodes[ep].level + 1;
 }
 
-inline double LingOkadaSolver::total_flow() const {
-  double total = 0.0;
-  for (std::size_t e = 0; e < m_n_edges; ++e) {
-    if (m_is_bv[e]) {
-      total += m_edges[e].flow;
-    }
-  }
-  return total;
-}
-
 inline double LingOkadaSolver::solve(std::ptrdiff_t root, int max_iter) {
   init_bv_tree(root);
   update_subtree(root);
@@ -533,6 +536,101 @@ inline void extract_transport_plan(
       current_in_degree[v]--;
       if (current_in_degree[v] == 0) {
         zero_in_nodes.push_back(v);
+      }
+    }
+  }
+}
+
+template <std::size_t Dim, class Scalar, class CompScalar = double>
+  requires(Dim >= 2)  // NOLINT(whitespace/indent_namespace)
+void greedy_init(const GridDataView<Dim, Scalar>& h1,
+                 const GridDataView<Dim, Scalar>& h2,
+                 LingOkadaSolver& solver) {
+  const auto& layout = h1.layout();
+  const auto& shape = layout.shape();
+  const std::size_t n_nodes = layout.node_count();
+
+  // Set node demands d[i] = H1[i] - H2[i] and initialise working copy.
+  std::vector<CompScalar> demand(n_nodes);
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    CompScalar d = static_cast<CompScalar>(h1.data()[i]) -
+                   static_cast<CompScalar>(h2.data()[i]);
+    demand[i] = d;
+    solver.node(static_cast<std::ptrdiff_t>(i)).d =
+        static_cast<double>(d);
+  }
+
+  // Strides: stride[a] = product of shape[a+1..Dim-1]
+  std::array<std::ptrdiff_t, Dim> stride{};
+  stride[Dim - 1] = 1;
+  for (std::size_t a = Dim - 1; a-- > 0;) {
+    stride[a] =
+        stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
+  }
+
+  // Cache coordinates during initial sweep to avoid calling
+  // layout.coordinates() repeatedly.
+  std::vector<typename GridLayout<Dim>::Coordinates> coords(n_nodes);
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    coords[i] = layout.coordinates(static_cast<std::ptrdiff_t>(i));
+  }
+
+  // prefix[a][k] = -(sum of demand[i] for all i with coord[a] < k),
+  // maintained during the sweep. Initialised from the original demands.
+  std::vector<std::vector<CompScalar>> prefix(Dim);
+  for (std::size_t a = 0; a < Dim; ++a) {
+    prefix[a].assign(shape[a], CompScalar{0});
+    // Compute per-slice sums first
+    std::vector<CompScalar> slice(shape[a], CompScalar{0});
+    for (std::size_t i = 0; i < n_nodes; ++i) {
+      slice[static_cast<std::size_t>(coords[i][a])] += demand[i];
+    }
+    // Build prefix sums: prefix[a][k] = -(sum of slice[0..k-1])
+    for (std::size_t k = 0; k + 1 < shape[a]; ++k) {
+      prefix[a][k + 1] = prefix[a][k] - slice[k];
+    }
+  }
+
+  // Sweep nodes 0 .. N-2 in lexicographic (flat) order
+  for (std::ptrdiff_t i = 0;
+       i < static_cast<std::ptrdiff_t>(n_nodes) - 1; ++i) {
+    const auto& coord = coords[static_cast<std::size_t>(i)];
+    const CompScalar d_i = demand[static_cast<std::size_t>(i)];
+
+    // Choose the axis that minimises |d_i + prefix[a][coord[a]+1]|
+    std::size_t best_axis = Dim;  // sentinel
+    CompScalar best_cost = std::numeric_limits<CompScalar>::max();
+    for (std::size_t a = 0; a < Dim; ++a) {
+      const std::size_t k = static_cast<std::size_t>(coord[a]);
+      if (k + 1 < shape[a]) {
+        const CompScalar cost = std::abs(d_i + prefix[a][k + 1]);
+        if (cost < best_cost) {
+          best_cost = cost;
+          best_axis = a;
+        }
+      }
+    }
+
+    const std::size_t ka = static_cast<std::size_t>(coord[best_axis]);
+    const std::ptrdiff_t neighbour = i + stride[best_axis];
+
+    // BV edge: i → neighbour
+    const int bv_dir = (d_i > CompScalar{0}) ? 1 : 0;
+    solver.register_bv(i, neighbour,
+                       static_cast<double>(std::abs(d_i)), bv_dir);
+
+    // Update working arrays
+    demand[static_cast<std::size_t>(neighbour)] += d_i;
+    prefix[best_axis][ka + 1] += d_i;
+
+    // All other forward edges from i are NBV
+    for (std::size_t a = 0; a < Dim; ++a) {
+      if (a == best_axis) {
+        continue;
+      }
+      const std::size_t k = static_cast<std::size_t>(coord[a]);
+      if (k + 1 < shape[a]) {
+        solver.register_nbv(i, i + stride[a]);
       }
     }
   }
