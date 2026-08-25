@@ -6,6 +6,8 @@
 #include <vector>
 
 #include <CLI/CLI.hpp>  // NOLINT(build/include_order)
+#include <spdlog/sinks/stdout_color_sinks.h>  // NOLINT(build/include_order)
+#include <spdlog/spdlog.h>                    // NOLINT(build/include_order)
 
 #include "emdgrid/emd_l1.hpp"
 #include "emdgrid/emdgrid.hpp"
@@ -23,6 +25,8 @@ int main(int argc, char** argv) {
   std::vector<std::size_t> dimension_order;
   unsigned int seed1 = 42;
   unsigned int seed2 = 1337;
+  int max_iter = 500000;
+  bool verbose = false;
 
   app.add_option("-d,--dim", dim,
                  "Grid extent along each 3D axis (default: 10)");
@@ -39,8 +43,18 @@ int main(int argc, char** argv) {
                  "Random seed for first histogram (default: 42)");
   app.add_option("--seed2", seed2,
                  "Random seed for second histogram (default: 1337)");
+  app.add_option("--max-iter", max_iter,
+                 "Maximum network-simplex iterations for EMD-L1 "
+                 "(default: 500000)");
+  app.add_flag("-v,--verbose", verbose, "Enable verbose logging");
 
   CLI11_PARSE(app, argc, argv);
+
+  // Configure spdlog stdout logger
+  auto stdout_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+  auto logger = std::make_shared<spdlog::logger>("emdgrid", stdout_sink);
+  spdlog::set_default_logger(logger);
+  spdlog::set_level(verbose ? spdlog::level::info : spdlog::level::off);
 
   std::cout << "emdgrid version " << emdgrid::version() << '\n';
 
@@ -71,8 +85,8 @@ int main(int argc, char** argv) {
   if (run_emd_l1) {
     emdgrid::SparseTransportPlan plan;
     const emdgrid::Timer timer;
-    const double dist =
-        emdgrid::emd_l1(h1, h2, compute_plan ? &plan : nullptr);
+    const double dist = emdgrid::emd_l1(h1, h2, compute_plan ? &plan : nullptr,
+                                         max_iter);
     const double elapsed_ms = timer.elapsed_milliseconds();
 
     std::cout << "\n--- Exact EMD-L1 ---\n";

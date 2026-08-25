@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
 #include "emdgrid/emdgrid.hpp"
 
 namespace emdgrid {
@@ -416,11 +418,17 @@ inline void LingOkadaSolver::pivot() {
 }
 
 inline double LingOkadaSolver::solve(std::ptrdiff_t root, int max_iter) {
+  spdlog::info("Starting network simplex solver (max_iter={})...", max_iter);
   init_bv_tree(root);
   update_subtree(root);
 
+  bool converged = false;
   for (int iter = 0; iter < max_iter; ++iter) {
     if (is_optimal()) {
+      spdlog::info(
+          "Network simplex converged to optimal solution in {} iterations.",
+          iter);
+      converged = true;
       break;
     }
     find_loop();
@@ -430,6 +438,12 @@ inline double LingOkadaSolver::solve(std::ptrdiff_t root, int max_iter) {
     pivot();
     // Only the reattached subtree needs its potentials refreshed.
     update_subtree(enter_child);
+  }
+
+  if (!converged) {
+    spdlog::info(
+        "Network simplex reached maximum iterations ({}) without converging.",
+        max_iter);
   }
 
   return total_flow();
@@ -634,6 +648,9 @@ void greedy_init(const GridDataView<Dim, Scalar>& h1,
       }
     }
   }
+
+  spdlog::info("Initialised greedy basic feasible solution for {} nodes.",
+               n_nodes);
 }
 
 }  // namespace detail

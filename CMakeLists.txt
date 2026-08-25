@@ -28,6 +28,18 @@ else()
   message(STATUS "clang-tidy not found. Skipping corresponding checks.")
 endif()
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+include(FetchContent)
+FetchContent_Declare(
+    spdlog
+    QUIET
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.13.0
+    SYSTEM
+)
+FetchContent_MakeAvailable(spdlog)
+
 add_library(emdgrid src/emdgrid.cpp)
 target_include_directories(
   emdgrid
@@ -35,6 +47,8 @@ target_include_directories(
          $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
          $<INSTALL_INTERFACE:include>)
 target_compile_features(emdgrid PUBLIC cxx_std_23)
+
+target_link_libraries(emdgrid PUBLIC spdlog::spdlog)
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

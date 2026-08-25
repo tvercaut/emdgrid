@@ -10,6 +10,7 @@
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/greedy_emd_l1.hpp"
 #include "emdgrid/knothe_rosenblatt.hpp"
+#include "emdgrid/utils.hpp"
 #include "emdgrid/version.hpp"
 
 TEST_CASE("library version matches generated version") {
@@ -241,6 +242,46 @@ TEST_CASE("emd_l1 2D: unit shift along one axis costs 1") {
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
   CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(1.0));
+}
+
+TEST_CASE("emd_l1 3D: max_iter parameter exposure and convergence") {
+  constexpr std::size_t dim = 16;
+  const emdgrid::GridLayout<3> layout({dim, dim, dim});
+  const std::size_t n_bins = layout.node_count();
+
+  const std::vector<double> h1_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 42);
+  const std::vector<double> h2_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 1337);
+
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+  const double dist_kr = emdgrid::knothe_rosenblatt(
+      h1, h2, emdgrid::GroundMetric::L1, {}, nullptr);
+
+  // With sufficient max_iter, network simplex converges to exact optimal EMD-L1,
+  // which is strictly <= Knothe-Rosenblatt heuristic upper bound.
+  const double dist_emd = emdgrid::emd_l1(h1, h2, nullptr, 50000);
+
+  CHECK(dist_emd <= dist_kr);
+}
+
+TEST_CASE("emd_l1 2D: respects max_iter limit") {
+  const emdgrid::GridLayout<2> layout({4, 4});
+  const std::vector<double> h1_data =
+      emdgrid::generate_random_histogram<double>(16, 42);
+  const std::vector<double> h2_data =
+      emdgrid::generate_random_histogram<double>(16, 1337);
+
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1_data));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2_data));
+
+  const double dist_0_iter = emdgrid::emd_l1(h1, h2, nullptr, 0);
+  const double dist_full = emdgrid::emd_l1(h1, h2, nullptr, 10000);
+
+  // max_iter = 0 performs 0 pivots, staying at initial greedy cost (or > optimal)
+  CHECK(dist_0_iter >= dist_full);
 }
 
 // ============================================================================
