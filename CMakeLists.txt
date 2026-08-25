@@ -36,6 +36,11 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>)
 target_compile_features(emdgrid PUBLIC cxx_std_23)
 
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(emdgrid PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
 option(EMDGRID_BUILD_EXAMPLES "Build example targets" ON)
 option(EMDGRID_BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
 

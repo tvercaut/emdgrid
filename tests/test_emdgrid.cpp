@@ -9,6 +9,7 @@
 #include "emdgrid/emd_l1.hpp"
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/greedy_emd_l1.hpp"
+#include "emdgrid/knothe_rosenblatt.hpp"
 #include "emdgrid/version.hpp"
 
 TEST_CASE("library version matches generated version") {
@@ -240,6 +241,176 @@ TEST_CASE("emd_l1 2D: unit shift along one axis costs 1") {
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
   CHECK(emdgrid::emd_l1(h1, h2) == doctest::Approx(1.0));
+}
+
+// ============================================================================
+//  knothe_rosenblatt tests
+// ============================================================================
+
+TEST_CASE("knothe_rosenblatt 1D: identical histograms give zero") {
+  const emdgrid::GridLayout<1> layout({5});
+  const std::vector<double> v = {0.1, 0.2, 0.4, 0.2, 0.1};
+  const emdgrid::GridDataView<1, double> h(layout, std::span(v));
+  CHECK(emdgrid::knothe_rosenblatt(h, h, emdgrid::GroundMetric::L1) ==
+        doctest::Approx(0.0));
+  CHECK(emdgrid::knothe_rosenblatt(h, h, emdgrid::GroundMetric::SqEuclidean) ==
+        doctest::Approx(0.0));
+}
+
+TEST_CASE("knothe_rosenblatt 1D: matches 1D exact solvers") {
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+
+  double l1_cost =
+      emdgrid::knothe_rosenblatt(h1, h2, emdgrid::GroundMetric::L1);
+  double sq_cost =
+      emdgrid::knothe_rosenblatt(h1, h2, emdgrid::GroundMetric::SqEuclidean);
+
+  CHECK(l1_cost == doctest::Approx(emdgrid::emd_1d(h1, h2)));
+  CHECK(sq_cost == doctest::Approx(emdgrid::emd_sqeuclidean_1d(h1, h2)));
+}
+
+TEST_CASE("knothe_rosenblatt 2D: metric selection L1 vs SqEuclidean") {
+  const emdgrid::GridLayout<2> layout({3, 3});
+  std::vector<double> h1v(9, 0.0);
+  std::vector<double> h2v(9, 0.0);
+  h1v[0] = 1.0;  // bin (0,0)
+  h2v[8] = 1.0;  // bin (2,2)
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  // Distance along axis 0: |0-2| = 2, sq = 4.
+  // Distance along axis 1: |0-2| = 2, sq = 4.
+  // L1 total cost = 4.0. SqEuclidean total cost = 8.0.
+  double cost_l1 =
+      emdgrid::knothe_rosenblatt(h1, h2, emdgrid::GroundMetric::L1);
+  double cost_sq =
+      emdgrid::knothe_rosenblatt(h1, h2, emdgrid::GroundMetric::SqEuclidean);
+
+  CHECK(cost_l1 == doctest::Approx(4.0));
+  CHECK(cost_sq == doctest::Approx(8.0));
+}
+
+TEST_CASE("knothe_rosenblatt 2D: custom dimension order permutation") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  // H1 = [[0.5, 0.0], [0.0, 0.5]], H2 = [[0.0, 0.5], [0.0, 0.5]]
+  const std::vector<double> h1v = {0.5, 0.0, 0.0, 0.5};
+  const std::vector<double> h2v = {0.0, 0.5, 0.0, 0.5};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  const std::array<std::size_t, 2> order_01 = {0, 1};
+  const std::array<std::size_t, 2> order_10 = {1, 0};
+
+  double cost_01 = emdgrid::knothe_rosenblatt(
+      h1, h2, emdgrid::GroundMetric::L1, std::span(order_01));
+  double cost_10 = emdgrid::knothe_rosenblatt(
+      h1, h2, emdgrid::GroundMetric::L1, std::span(order_10));
+
+  CHECK(cost_01 >= 0.0);
+  CHECK(cost_10 >= 0.0);
+}
+
+TEST_CASE("knothe_rosenblatt 3D: diagonal shift") {
+  const emdgrid::GridLayout<3> layout({2, 2, 2});
+  std::vector<double> h1v(8, 0.0);
+  std::vector<double> h2v(8, 0.0);
+  h1v[0] = 1.0;
+  h2v[7] = 1.0;
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2v));
+
+  double cost_l1 =
+      emdgrid::knothe_rosenblatt(h1, h2, emdgrid::GroundMetric::L1);
+  double cost_sq =
+      emdgrid::knothe_rosenblatt(h1, h2, emdgrid::GroundMetric::SqEuclidean);
+
+  // From (0,0,0) to (1,1,1):
+  // L1: 1 + 1 + 1 = 3.0
+  // Sq: 1^2 + 1^2 + 1^2 = 3.0
+  CHECK(cost_l1 == doctest::Approx(3.0));
+  CHECK(cost_sq == doctest::Approx(3.0));
+}
+
+TEST_CASE("knothe_rosenblatt: invalid dimension order throws") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {0.5, 0.5, 0.0, 0.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+
+  const std::vector<std::size_t> wrong_length = {0};
+  const std::vector<std::size_t> duplicate_dims = {1, 1};
+  const std::vector<std::size_t> out_of_bounds = {0, 5};
+
+  CHECK_THROWS_AS(
+      static_cast<void>(emdgrid::knothe_rosenblatt(
+          h1, h1, emdgrid::GroundMetric::L1, std::span(wrong_length))),
+      std::invalid_argument);
+  CHECK_THROWS_AS(
+      static_cast<void>(emdgrid::knothe_rosenblatt(
+          h1, h1, emdgrid::GroundMetric::L1, std::span(duplicate_dims))),
+      std::invalid_argument);
+  CHECK_THROWS_AS(
+      static_cast<void>(emdgrid::knothe_rosenblatt(
+          h1, h1, emdgrid::GroundMetric::L1, std::span(out_of_bounds))),
+      std::invalid_argument);
+}
+
+TEST_CASE("knothe_rosenblatt: shape mismatch throws") {
+  const emdgrid::GridLayout<2> layout2({2, 2});
+  const emdgrid::GridLayout<2> layout3({3, 3});
+  const std::vector<double> v4(4, 0.25);
+  const std::vector<double> v9(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h4(layout2, std::span(v4));
+  const emdgrid::GridDataView<2, double> h9(layout3, std::span(v9));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::knothe_rosenblatt(h4, h9)),
+                  std::invalid_argument);
+}
+
+TEST_CASE(
+    "knothe_rosenblatt 2D: transport plan computation and cost "
+    "reconstruction") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {0.5, 0.5, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 0.5, 0.5};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  emdgrid::SparseTransportPlan plan_l1;
+  double cost_l1 = emdgrid::knothe_rosenblatt(
+      h1, h2, emdgrid::GroundMetric::L1, {}, &plan_l1);
+
+  REQUIRE(!plan_l1.flow.empty());
+  double reconstructed_l1 = 0.0;
+  for (std::size_t k = 0; k < plan_l1.flow.size(); ++k) {
+    auto c_src =
+        layout.coordinates(static_cast<std::ptrdiff_t>(plan_l1.source[k]));
+    auto c_tgt =
+        layout.coordinates(static_cast<std::ptrdiff_t>(plan_l1.target[k]));
+    double dist = static_cast<double>(std::abs(c_src[0] - c_tgt[0]) +
+                                      std::abs(c_src[1] - c_tgt[1]));
+    reconstructed_l1 += plan_l1.flow[k] * dist;
+  }
+  CHECK(reconstructed_l1 == doctest::Approx(cost_l1));
+
+  emdgrid::SparseTransportPlan plan_sq;
+  double cost_sq = emdgrid::knothe_rosenblatt(
+      h1, h2, emdgrid::GroundMetric::SqEuclidean, {}, &plan_sq);
+
+  REQUIRE(!plan_sq.flow.empty());
+  double reconstructed_sq = 0.0;
+  for (std::size_t k = 0; k < plan_sq.flow.size(); ++k) {
+    auto c_src =
+        layout.coordinates(static_cast<std::ptrdiff_t>(plan_sq.source[k]));
+    auto c_tgt =
+        layout.coordinates(static_cast<std::ptrdiff_t>(plan_sq.target[k]));
+    double d0 = static_cast<double>(c_src[0] - c_tgt[0]);
+    double d1 = static_cast<double>(c_src[1] - c_tgt[1]);
+    reconstructed_sq += plan_sq.flow[k] * (d0 * d0 + d1 * d1);
+  }
+  CHECK(reconstructed_sq == doctest::Approx(cost_sq));
 }
 
 // ============================================================================
