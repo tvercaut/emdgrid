@@ -142,6 +142,89 @@ TEST_CASE("emd_l1 1D: shape mismatch throws") {
                   std::invalid_argument);
 }
 
+// ============================================================================
+//  emd_sqeuclidean_1d tests
+// ============================================================================
+
+TEST_CASE("emd_sqeuclidean_1d: identical histograms give zero") {
+  const emdgrid::GridLayout<1> layout({5});
+  const std::vector<double> v = {0.1, 0.2, 0.4, 0.2, 0.1};
+  const emdgrid::GridDataView<1, double> h(layout, std::span(v));
+  CHECK(emdgrid::emd_sqeuclidean_1d(h, h) == doctest::Approx(0.0));
+}
+
+TEST_CASE("emd_sqeuclidean_1d: unit shift by one bin costs 1") {
+  // Moving 1 unit from bin 0 to bin 1: (1-0)^2 = 1.
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 1.0, 0.0};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_sqeuclidean_1d(h1, h2) == doctest::Approx(1.0));
+}
+
+TEST_CASE("emd_sqeuclidean_1d: unit shift by two bins costs 4") {
+  // Moving 1 unit from bin 0 to bin 2: (2-0)^2 = 4.
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_sqeuclidean_1d(h1, h2) == doctest::Approx(4.0));
+}
+
+TEST_CASE("emd_sqeuclidean_1d: split mass transfer") {
+  // h1 = [0.5, 0.5, 0.0], h2 = [0.0, 0.5, 0.5]
+  // 0.5 shifted 0->1 (cost 0.5), 0.5 shifted 1->2 (cost 0.5). Total cost = 1.0.
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {0.5, 0.5, 0.0};
+  const std::vector<double> h2v = {0.0, 0.5, 0.5};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::emd_sqeuclidean_1d(h1, h2) == doctest::Approx(1.0));
+}
+
+TEST_CASE("emd_sqeuclidean_1d: symmetry") {
+  const emdgrid::GridLayout<1> layout({4});
+  const std::vector<double> av = {0.5, 0.5, 0.0, 0.0};
+  const std::vector<double> bv = {0.0, 0.0, 0.5, 0.5};
+  const emdgrid::GridDataView<1, double> ha(layout, std::span(av));
+  const emdgrid::GridDataView<1, double> hb(layout, std::span(bv));
+  CHECK(emdgrid::emd_sqeuclidean_1d(ha, hb) ==
+        doctest::Approx(emdgrid::emd_sqeuclidean_1d(hb, ha)));
+}
+
+TEST_CASE("emd_sqeuclidean_1d: shape mismatch throws") {
+  const emdgrid::GridLayout<1> layout3({3});
+  const emdgrid::GridLayout<1> layout4({4});
+  const std::vector<double> v3 = {1.0, 0.0, 0.0};
+  const std::vector<double> v4 = {0.0, 0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> h3(layout3, std::span(v3));
+  const emdgrid::GridDataView<1, double> h4(layout4, std::span(v4));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::emd_sqeuclidean_1d(h3, h4)),
+                  std::invalid_argument);
+}
+
+TEST_CASE(
+    "emd_sqeuclidean_1d: transport plan computation and cost reconstruction") {
+  const emdgrid::GridLayout<1> layout({3});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
+
+  emdgrid::SparseTransportPlan plan;
+  double cost = emdgrid::emd_sqeuclidean_1d(h1, h2, &plan);
+
+  CHECK(cost == doctest::Approx(4.0));
+  REQUIRE_EQ(plan.source.size(), 1);
+  REQUIRE_EQ(plan.target.size(), 1);
+  REQUIRE_EQ(plan.flow.size(), 1);
+  CHECK_EQ(plan.source[0], 0);
+  CHECK_EQ(plan.target[0], 2);
+  CHECK(plan.flow[0] == doctest::Approx(1.0));
+}
+
 TEST_CASE("emd_l1 2D: identical histograms give zero") {
   const emdgrid::GridLayout<2> layout({3, 3});
   const std::vector<double> v(9, 1.0 / 9);

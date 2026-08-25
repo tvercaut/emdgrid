@@ -81,6 +81,48 @@ py::object emd_l1_py(const py::array_t<double, py::array::c_style>& h1,
   return py::cast(cost);
 }
 
+/// Python-level emd_sqeuclidean_1d: accepts 1-dimensional numpy arrays.
+py::object emd_sqeuclidean_1d_py(
+    const py::array_t<double, py::array::c_style>& h1,
+    const py::array_t<double, py::array::c_style>& h2,
+    bool return_transport_plan = false) {
+  if (h1.ndim() != 1 || h2.ndim() != 1) {
+    throw std::invalid_argument(
+        "emd_sqeuclidean_1d only supports 1-dimensional histograms");
+  }
+
+  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan* plan_ptr =
+      return_transport_plan ? &plan : nullptr;
+
+  typename emdgrid::GridLayout<1>::Shape shape{
+      static_cast<std::size_t>(h1.shape(0))};
+  const emdgrid::GridLayout<1> layout(shape);
+  const emdgrid::GridDataView<1, double> v1(
+      layout, std::span<const double>(h1.data(), h1.size()));
+  const emdgrid::GridDataView<1, double> v2(
+      layout, std::span<const double>(h2.data(), h2.size()));
+
+  double cost = emdgrid::emd_sqeuclidean_1d(v1, v2, plan_ptr);
+
+  if (return_transport_plan) {
+    py::object coo_matrix;
+    try {
+      py::module_ scipy_sparse = py::module_::import("scipy.sparse");
+      std::size_t n_nodes = static_cast<std::size_t>(h1.size());
+      coo_matrix = scipy_sparse.attr("coo_matrix")(
+          py::make_tuple(plan.flow,
+                         py::make_tuple(plan.source, plan.target)),
+          py::make_tuple(n_nodes, n_nodes));
+    } catch (const py::error_already_set&) {
+      // Fallback if scipy is not installed
+      return py::make_tuple(cost, plan);
+    }
+    return py::make_tuple(cost, coo_matrix);
+  }
+  return py::cast(cost);
+}
+
 /// Dispatch greedy_emd_l1_approx for a numpy array of given dimensionality.
 template <std::size_t Dim>
 double greedy_emd_l1_approx_impl(
@@ -214,5 +256,29 @@ Returns
 -------
 float or tuple(float, SparseTransportPlan)
     The approximate EMD-L1 cost, or (cost, plan) if return_transport_plan is True.
+)doc");
+
+  module.def(
+      "emd_sqeuclidean_1d", &emd_sqeuclidean_1d_py,
+      py::arg("h1"), py::arg("h2"),
+      py::arg("return_transport_plan") = false,
+      R"doc(
+Compute the 1-D Optimal Transport cost under the squared Euclidean ground metric.
+
+Both arrays must be 1-dimensional with the same shape and equal total mass.
+
+Parameters
+----------
+h1 : numpy.ndarray, dtype=float64
+    First 1-D histogram (C-contiguous).
+h2 : numpy.ndarray, dtype=float64
+    Second 1-D histogram (C-contiguous, same shape as *h1*).
+return_transport_plan : bool, optional
+    If True, return a tuple (cost, plan).
+
+Returns
+-------
+float or tuple(float, SparseTransportPlan)
+    The 1-D squared Euclidean OT cost, or (cost, plan) if return_transport_plan is True.
 )doc");
 }

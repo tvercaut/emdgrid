@@ -84,4 +84,64 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
   return total;
 }
 
+/// Exact 1-D Optimal Transport solver under squared Euclidean ground metric.
+///
+/// For 1-D histograms on an integer grid, the squared Euclidean cost is
+/// defined as C_{i,j} = (i − j)². The optimal transport plan is uniquely
+/// determined by monotonic matching of cumulative mass from left to right.
+///
+/// @tparam Scalar Input histogram scalar type.
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::floating_point Scalar, std::floating_point CompScalar = double>
+[[nodiscard]] CompScalar emd_sqeuclidean_1d(
+    const GridDataView<1, Scalar>& h1,
+    const GridDataView<1, Scalar>& h2,
+    SparseTransportPlan* plan = nullptr) {
+  if (h1.layout().shape() != h2.layout().shape()) {
+    throw std::invalid_argument("histogram shapes do not match");
+  }
+  const std::size_t n = h1.layout().node_count();
+
+  if (plan) {
+    plan->source.clear();
+    plan->target.clear();
+    plan->flow.clear();
+  }
+
+  std::vector<double> s(n);
+  std::vector<double> d(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    s[i] = static_cast<double>(h1.data()[i]);
+    d[i] = static_cast<double>(h2.data()[i]);
+  }
+
+  CompScalar total{0};
+  std::size_t src_idx = 0;
+  std::size_t tgt_idx = 0;
+  while (src_idx < n && tgt_idx < n) {
+    if (s[src_idx] <= 1e-12) {
+      ++src_idx;
+      continue;
+    }
+    if (d[tgt_idx] <= 1e-12) {
+      ++tgt_idx;
+      continue;
+    }
+    double transfer = std::min(s[src_idx], d[tgt_idx]);
+    double dist = static_cast<double>(src_idx) - static_cast<double>(tgt_idx);
+    total += static_cast<CompScalar>(transfer * dist * dist);
+
+    if (plan) {
+      plan->source.push_back(static_cast<uint32_t>(src_idx));
+      plan->target.push_back(static_cast<uint32_t>(tgt_idx));
+      plan->flow.push_back(transfer);
+    }
+
+    s[src_idx] -= transfer;
+    d[tgt_idx] -= transfer;
+  }
+
+  return total;
+}
+
 }  // namespace emdgrid
