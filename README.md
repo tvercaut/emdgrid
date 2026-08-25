@@ -7,9 +7,19 @@ Fast and exact optimal transport solvers for discrete histograms on regular grid
 - **Multidimensional Knothe-Rosenblatt Heuristic**: Fast $N$-D heuristic solver (`knothe_rosenblatt`) supporting both $L_1$ and squared Euclidean ground metrics, custom dimension traversal permutations, and parallelization via OpenMP.
 - **Python Bindings**: Pybind11 Python bindings (`pyemdgrid`) with support for retrieving sparse transport plans (`scipy.sparse.coo_matrix`).
 
+## Installation
+`pyemdgrid` can be installed directly with `pip`:
+```bash
+pip install git+https://github.com/tvercaut/emdgrid.git
+```
+Or from a local clone:
+```bash
+pip install .
+```
+
 ## Examples & Notebooks
 - **Google Colab Interactive Demo**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tvercaut/emdgrid/blob/main/example/colab_demo.ipynb)
-  Demonstrates building Python bindings directly in Google Colab, computing EMD-L1 and Knothe-Rosenblatt transport plans for 10x10 grid histograms, and visualizing transport plan sparsity patterns.
+  Demonstrates installing `pyemdgrid` in Google Colab via `pip`, computing EMD-L1 and Knothe-Rosenblatt transport plans for 10x10 grid histograms, and visualizing transport plan sparsity patterns.
 
 ## References
 Ling H, Okada K. An efficient earth mover's distance algorithm for robust histogram comparison. IEEE transactions on pattern analysis and machine intelligence. 2007 May 31;29(5):840-53.
