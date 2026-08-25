@@ -260,8 +260,8 @@ TEST_CASE("emd_l1 3D: max_iter parameter exposure and convergence") {
   const double dist_kr = emdgrid::knothe_rosenblatt(
       h1, h2, emdgrid::GroundMetric::L1, {}, nullptr);
 
-  // With sufficient max_iter, network simplex converges to exact optimal EMD-L1,
-  // which is strictly <= Knothe-Rosenblatt heuristic upper bound.
+  // With sufficient max_iter, network simplex converges to exact optimal
+  // EMD-L1, which is strictly <= Knothe-Rosenblatt heuristic upper bound.
   const double dist_emd = emdgrid::emd_l1(h1, h2, nullptr, 50000);
 
   CHECK(dist_emd <= dist_kr);
@@ -280,7 +280,7 @@ TEST_CASE("emd_l1 2D: respects max_iter limit") {
   const double dist_0_iter = emdgrid::emd_l1(h1, h2, nullptr, 0);
   const double dist_full = emdgrid::emd_l1(h1, h2, nullptr, 10000);
 
-  // max_iter = 0 performs 0 pivots, staying at initial greedy cost (or > optimal)
+  // max_iter = 0 performs 0 pivots, staying at initial greedy cost.
   CHECK(dist_0_iter >= dist_full);
 }
 

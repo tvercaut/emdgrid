@@ -20,14 +20,6 @@ endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile commands for tools like clang-tidy")
 
-find_program(CLANG_TIDY_EXE NAMES clang-tidy)
-if(CLANG_TIDY_EXE)
-  set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_EXE})
-  message(STATUS "Found clang-tidy: ${CLANG_TIDY_EXE}.")
-else()
-  message(STATUS "clang-tidy not found. Skipping corresponding checks.")
-endif()
-
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
@@ -39,6 +31,17 @@ FetchContent_Declare(
     SYSTEM
 )
 FetchContent_MakeAvailable(spdlog)
+if(TARGET spdlog)
+  set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
+endif()
+
+find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+if(CLANG_TIDY_EXE)
+  set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_EXE})
+  message(STATUS "Found clang-tidy: ${CLANG_TIDY_EXE}.")
+else()
+  message(STATUS "clang-tidy not found. Skipping corresponding checks.")
+endif()
 
 add_library(emdgrid src/emdgrid.cpp)
 target_include_directories(

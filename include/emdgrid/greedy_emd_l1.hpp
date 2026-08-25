@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include <spdlog/spdlog.h>
+#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
 
 #include "emdgrid/emd_1d.hpp"
 #include "emdgrid/emd_l1_detail.hpp"

@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include <spdlog/spdlog.h>
+#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
 
 #include "emdgrid/emdgrid.hpp"
 

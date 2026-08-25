@@ -1,5 +1,6 @@
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <span>
 #include <string>
 #include <utility>
