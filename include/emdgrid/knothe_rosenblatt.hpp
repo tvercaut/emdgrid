@@ -127,6 +127,8 @@ template <std::size_t Dim, std::floating_point Scalar,
           v[x] /= sum_v;
         }
 
+        // 1D monotone matching is optimal for both L1 and squared Euclidean
+        // metrics on 1D grids (Monge property), yielding identical couplings.
         detail::compute_1d_monotone_matching(u, v, &matching);
 
         for (const auto& flow_pair : matching) {
@@ -214,6 +216,8 @@ template <std::size_t Dim, std::floating_point Scalar,
         v[x] /= sum_v;
       }
 
+      // 1D monotone matching is optimal for both L1 and squared Euclidean
+      // metrics on 1D grids (Monge property), yielding identical couplings.
       detail::compute_1d_monotone_matching(u, v, &matching);
 
       for (const auto& flow_pair : matching) {
