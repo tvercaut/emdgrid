@@ -132,6 +132,14 @@ class TestEmdL1Binding:
         assert plan.shape == (4, 4)
         assert plan.sum() == pytest.approx(2.0)
 
+    def test_max_iter_parameter(self):
+        h1 = np.array([[1.0, 0.0], [0.0, 1.0]])
+        h2 = np.array([[0.0, 1.0], [1.0, 0.0]])
+        cost_0 = pyemdgrid.emd_l1(h1, h2, max_iter=0)
+        cost_full = pyemdgrid.emd_l1(h1, h2, max_iter=1000)
+        assert cost_full == pytest.approx(2.0)
+        assert cost_0 >= cost_full
+
 
 class TestEmdSqeuclidean1dBinding:
     """Basic correctness tests for emd_sqeuclidean_1d via Python binding."""

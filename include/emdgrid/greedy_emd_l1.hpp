@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
+
 #include "emdgrid/emd_1d.hpp"
 #include "emdgrid/emd_l1_detail.hpp"
 #include "emdgrid/emdgrid.hpp"
@@ -47,6 +49,8 @@ template <std::size_t Dim, std::floating_point Scalar,
   const auto& layout = h1.layout();
   const std::size_t n_nodes = layout.node_count();
   const std::size_t n_edges = layout.edge_count();
+
+  spdlog::info("Computing greedy EMD-L1 upper bound approximation...");
 
   detail::LingOkadaSolver solver(n_nodes, n_edges);
   detail::greedy_init<Dim, Scalar, CompScalar>(h1, h2, solver);

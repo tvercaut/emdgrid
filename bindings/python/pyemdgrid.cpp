@@ -20,7 +20,8 @@ namespace {
 template <std::size_t Dim>
 double emd_l1_impl(const py::array_t<double, py::array::c_style>& h1,
                    const py::array_t<double, py::array::c_style>& h2,
-                   emdgrid::SparseTransportPlan* plan = nullptr) {
+                   emdgrid::SparseTransportPlan* plan = nullptr,
+                   int max_iter = 500000) {
   if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
       h2.ndim() != static_cast<py::ssize_t>(Dim)) {
     throw std::invalid_argument("array dimensionality does not match Dim");
@@ -34,13 +35,19 @@ double emd_l1_impl(const py::array_t<double, py::array::c_style>& h1,
       layout, std::span<const double>(h1.data(), h1.size()));
   const emdgrid::GridDataView<Dim, double> v2(
       layout, std::span<const double>(h2.data(), h2.size()));
-  return emdgrid::emd_l1(v1, v2, plan);
+  if constexpr (Dim == 1) {
+    static_cast<void>(max_iter);
+    return emdgrid::emd_l1(v1, v2, plan);
+  } else {
+    return emdgrid::emd_l1(v1, v2, plan, max_iter);
+  }
 }
 
 /// Python-level emd_l1: accepts any numpy array with ndim in {1,2,3}.
 py::object emd_l1_py(const py::array_t<double, py::array::c_style>& h1,
                      const py::array_t<double, py::array::c_style>& h2,
-                     bool return_transport_plan = false) {
+                     bool return_transport_plan = false,
+                     int max_iter = 500000) {
   if (h1.ndim() != h2.ndim()) {
     throw std::invalid_argument(
         "h1 and h2 must have the same number of dimensions");
@@ -53,13 +60,13 @@ py::object emd_l1_py(const py::array_t<double, py::array::c_style>& h1,
   double cost = 0.0;
   switch (h1.ndim()) {
     case 1:
-      cost = emd_l1_impl<1>(h1, h2, plan_ptr);
+      cost = emd_l1_impl<1>(h1, h2, plan_ptr, max_iter);
       break;
     case 2:
-      cost = emd_l1_impl<2>(h1, h2, plan_ptr);
+      cost = emd_l1_impl<2>(h1, h2, plan_ptr, max_iter);
       break;
     case 3:
-      cost = emd_l1_impl<3>(h1, h2, plan_ptr);
+      cost = emd_l1_impl<3>(h1, h2, plan_ptr, max_iter);
       break;
     default:
       throw std::invalid_argument(
@@ -319,6 +326,7 @@ PYBIND11_MODULE(pyemdgrid, module) {
       "emd_l1", &emd_l1_py,
       py::arg("h1"), py::arg("h2"),
       py::arg("return_transport_plan") = false,
+      py::arg("max_iter") = 500000,
       R"doc(
 Compute the Earth Mover's Distance under the L1 (Manhattan) ground metric
 for discrete histograms on a regular integer grid.
@@ -334,6 +342,8 @@ h2 : numpy.ndarray, dtype=float64
     Second histogram (C-contiguous, same shape as *h1*).
 return_transport_plan : bool, optional
     If True, return a tuple (cost, plan) where plan is a SparseTransportPlan.
+max_iter : int, optional
+    Maximum network-simplex pivot iterations (default: 500000).
 
 Returns
 -------

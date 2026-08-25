@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
+
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/knothe_rosenblatt_detail.hpp"
 
@@ -61,8 +63,15 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   double total_cost = 0.0;
 
+  spdlog::info(
+      "Starting Knothe-Rosenblatt transport solver (Dim={}, metric={})...",
+      Dim, metric == GroundMetric::L1 ? "L1" : "SqEuclidean");
+
   for (std::size_t k = 0; k < Dim; ++k) {
     const std::size_t current_dim = order[k];
+    spdlog::info(
+        "Knothe-Rosenblatt processing dimension {}/{} (axis {})...", k + 1,
+        Dim, current_dim);
     const std::size_t extent = shape[current_dim];
     const std::size_t dim_stride = strides[current_dim];
 
@@ -247,6 +256,9 @@ template <std::size_t Dim, std::floating_point Scalar,
 
     current_tasks = std::move(next_tasks);
   }
+
+  spdlog::info("Knothe-Rosenblatt solver completed with total cost {}.",
+               total_cost);
 
   return static_cast<CompScalar>(total_cost);
 }

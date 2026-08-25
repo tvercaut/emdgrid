@@ -20,6 +20,21 @@ endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile commands for tools like clang-tidy")
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+include(FetchContent)
+FetchContent_Declare(
+    spdlog
+    QUIET
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.17.0
+    SYSTEM
+)
+FetchContent_MakeAvailable(spdlog)
+if(TARGET spdlog)
+  set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
+endif()
+
 find_program(CLANG_TIDY_EXE NAMES clang-tidy)
 if(CLANG_TIDY_EXE)
   set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_EXE})
@@ -35,6 +50,8 @@ target_include_directories(
          $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
          $<INSTALL_INTERFACE:include>)
 target_compile_features(emdgrid PUBLIC cxx_std_23)
+
+target_link_libraries(emdgrid PUBLIC spdlog::spdlog)
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

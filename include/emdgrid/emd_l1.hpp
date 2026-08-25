@@ -46,7 +46,8 @@ template <std::size_t Dim, std::floating_point Scalar,
   requires(Dim >= 2)  // NOLINT(whitespace/indent_namespace)
 [[nodiscard]] CompScalar emd_l1(const GridDataView<Dim, Scalar>& h1,
                                 const GridDataView<Dim, Scalar>& h2,
-                                SparseTransportPlan* plan = nullptr) {
+                                SparseTransportPlan* plan = nullptr,
+                                int max_iter = 500000) {
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -71,7 +72,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     root = layout.node(rc);
   }
 
-  const double cost = solver.solve(root);
+  const double cost = solver.solve(root, max_iter);
 
   if (plan) {
     std::vector<double> h1_d(n_nodes);
