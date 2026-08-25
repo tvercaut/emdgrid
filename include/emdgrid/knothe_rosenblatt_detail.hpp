@@ -13,7 +13,7 @@ namespace emdgrid {
 
 /// Ground metric choice for 1-D marginal transport matching in
 /// Knothe-Rosenblatt transportation plan.
-enum class GroundMetric { L1, SqEuclidean };
+enum class GroundMetric : std::uint8_t { L1, SqEuclidean };
 
 namespace detail {
 

@@ -382,6 +382,7 @@ TEST_CASE(
   double cost_l1 = emdgrid::knothe_rosenblatt(
       h1, h2, emdgrid::GroundMetric::L1, {}, &plan_l1);
 
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   REQUIRE(!plan_l1.flow.empty());
   double reconstructed_l1 = 0.0;
   for (std::size_t k = 0; k < plan_l1.flow.size(); ++k) {
@@ -399,6 +400,7 @@ TEST_CASE(
   double cost_sq = emdgrid::knothe_rosenblatt(
       h1, h2, emdgrid::GroundMetric::SqEuclidean, {}, &plan_sq);
 
+  // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   REQUIRE(!plan_sq.flow.empty());
   double reconstructed_sq = 0.0;
   for (std::size_t k = 0; k < plan_sq.flow.size(); ++k) {
