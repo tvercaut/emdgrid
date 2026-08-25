@@ -5,12 +5,63 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
 #include "emdgrid/emdgrid.hpp"
 
 namespace emdgrid {
+
+namespace detail {
+
+/// Active 1-D monotone matching flow triple.
+struct MonotoneFlow {
+  std::size_t src_idx{0};
+  std::size_t tgt_idx{0};
+  double flow{0.0};
+};
+
+/// Computes 1-D monotone transport matching between two 1-D mass distributions.
+inline void compute_1d_monotone_matching(
+    std::span<const double> u, std::span<const double> v,
+    std::vector<MonotoneFlow>* matching) {
+  matching->clear();
+  std::size_t i = 0;
+  std::size_t j = 0;
+  const std::size_t n_u = u.size();
+  const std::size_t n_v = v.size();
+  if (n_u == 0 || n_v == 0) {
+    return;
+  }
+
+  double rem_u = u[0];
+  double rem_v = v[0];
+  constexpr double kEps = 1e-12;
+
+  while (i < n_u && j < n_v) {
+    if (rem_u <= kEps) {
+      ++i;
+      if (i < n_u) {
+        rem_u = u[i];
+      }
+      continue;
+    }
+    if (rem_v <= kEps) {
+      ++j;
+      if (j < n_v) {
+        rem_v = v[j];
+      }
+      continue;
+    }
+    const double transfer = std::min(rem_u, rem_v);
+    matching->push_back({i, j, transfer});
+    rem_u -= transfer;
+    rem_v -= transfer;
+  }
+}
+
+}  // namespace detail
 
 // ---------------------------------------------------------------------------
 // Public API: emd_1d
@@ -60,24 +111,12 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
       d[i] = h2_val - self_mass;
     }
 
-    std::size_t src_idx = 0;
-    std::size_t tgt_idx = 0;
-    while (src_idx < n && tgt_idx < n) {
-      if (s[src_idx] <= 1e-12) {
-        ++src_idx;
-        continue;
-      }
-      if (d[tgt_idx] <= 1e-12) {
-        ++tgt_idx;
-        continue;
-      }
-      double transfer = std::min(s[src_idx], d[tgt_idx]);
-      plan->source.push_back(static_cast<uint32_t>(src_idx));
-      plan->target.push_back(static_cast<uint32_t>(tgt_idx));
-      plan->flow.push_back(transfer);
-
-      s[src_idx] -= transfer;
-      d[tgt_idx] -= transfer;
+    std::vector<detail::MonotoneFlow> matching;
+    detail::compute_1d_monotone_matching(s, d, &matching);
+    for (const auto& flow_pair : matching) {
+      plan->source.push_back(static_cast<uint32_t>(flow_pair.src_idx));
+      plan->target.push_back(static_cast<uint32_t>(flow_pair.tgt_idx));
+      plan->flow.push_back(flow_pair.flow);
     }
   }
 
@@ -115,30 +154,20 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
     d[i] = static_cast<double>(h2.data()[i]);
   }
 
+  std::vector<detail::MonotoneFlow> matching;
+  detail::compute_1d_monotone_matching(s, d, &matching);
+
   CompScalar total{0};
-  std::size_t src_idx = 0;
-  std::size_t tgt_idx = 0;
-  while (src_idx < n && tgt_idx < n) {
-    if (s[src_idx] <= 1e-12) {
-      ++src_idx;
-      continue;
-    }
-    if (d[tgt_idx] <= 1e-12) {
-      ++tgt_idx;
-      continue;
-    }
-    double transfer = std::min(s[src_idx], d[tgt_idx]);
-    double dist = static_cast<double>(src_idx) - static_cast<double>(tgt_idx);
-    total += static_cast<CompScalar>(transfer * dist * dist);
+  for (const auto& flow_pair : matching) {
+    const double dist = static_cast<double>(flow_pair.src_idx) -
+                        static_cast<double>(flow_pair.tgt_idx);
+    total += static_cast<CompScalar>(flow_pair.flow * dist * dist);
 
     if (plan) {
-      plan->source.push_back(static_cast<uint32_t>(src_idx));
-      plan->target.push_back(static_cast<uint32_t>(tgt_idx));
-      plan->flow.push_back(transfer);
+      plan->source.push_back(static_cast<uint32_t>(flow_pair.src_idx));
+      plan->target.push_back(static_cast<uint32_t>(flow_pair.tgt_idx));
+      plan->flow.push_back(flow_pair.flow);
     }
-
-    s[src_idx] -= transfer;
-    d[tgt_idx] -= transfer;
   }
 
   return total;

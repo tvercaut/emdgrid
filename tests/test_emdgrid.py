@@ -178,6 +178,111 @@ class TestEmdSqeuclidean1dBinding:
         assert plan.sum() == pytest.approx(1.0)
 
 
+class TestKnotheRosenblattBinding:
+    """Basic correctness tests for pyemdgrid.knothe_rosenblatt."""
+
+    def test_1d_identical_histograms_zero(self):
+        h = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+        assert pyemdgrid.knothe_rosenblatt(h, h, metric="l1") == pytest.approx(0.0)
+        assert pyemdgrid.knothe_rosenblatt(
+            h, h, metric=pyemdgrid.GroundMetric.SqEuclidean
+        ) == pytest.approx(0.0)
+
+    def test_1d_matches_exact_1d(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 1.0])
+        cost_l1 = pyemdgrid.knothe_rosenblatt(h1, h2, metric="l1")
+        cost_sq = pyemdgrid.knothe_rosenblatt(h1, h2, metric="sqeuclidean")
+
+        assert cost_l1 == pytest.approx(pyemdgrid.emd_l1(h1, h2))
+        assert cost_sq == pytest.approx(pyemdgrid.emd_sqeuclidean_1d(h1, h2))
+
+    def test_2d_metric_string_and_enum_choices(self):
+        h1 = np.zeros((3, 3))
+        h2 = np.zeros((3, 3))
+        h1[0, 0] = 1.0
+        h2[2, 2] = 1.0
+
+        c_l1_str = pyemdgrid.knothe_rosenblatt(h1, h2, metric="l1")
+        c_l1_enum = pyemdgrid.knothe_rosenblatt(
+            h1, h2, metric=pyemdgrid.GroundMetric.L1
+        )
+        c_sq_str1 = pyemdgrid.knothe_rosenblatt(h1, h2, metric="sqeuclidean")
+        c_sq_str2 = pyemdgrid.knothe_rosenblatt(h1, h2, metric="squared_euclidean")
+        c_sq_enum = pyemdgrid.knothe_rosenblatt(
+            h1, h2, metric=pyemdgrid.GroundMetric.SqEuclidean
+        )
+
+        assert c_l1_str == pytest.approx(4.0)
+        assert c_l1_enum == pytest.approx(4.0)
+        assert c_sq_str1 == pytest.approx(8.0)
+        assert c_sq_str2 == pytest.approx(8.0)
+        assert c_sq_enum == pytest.approx(8.0)
+
+    def test_2d_dimension_order_permutation(self):
+        h1 = np.array([[0.5, 0.0], [0.0, 0.5]])
+        h2 = np.array([[0.0, 0.5], [0.0, 0.5]])
+
+        cost_01 = pyemdgrid.knothe_rosenblatt(h1, h2, dimension_order=[0, 1])
+        cost_10 = pyemdgrid.knothe_rosenblatt(h1, h2, dimension_order=[1, 0])
+
+        assert isinstance(cost_01, float)
+        assert isinstance(cost_10, float)
+
+    def test_3d_diagonal_shift(self):
+        h1 = np.zeros((2, 2, 2))
+        h2 = np.zeros((2, 2, 2))
+        h1[0, 0, 0] = 1.0
+        h2[1, 1, 1] = 1.0
+
+        assert pyemdgrid.knothe_rosenblatt(h1, h2, metric="l1") == pytest.approx(3.0)
+        assert pyemdgrid.knothe_rosenblatt(
+            h1, h2, metric="sqeuclidean"
+        ) == pytest.approx(3.0)
+
+    def test_4d_histogram_support(self):
+        h1 = np.zeros((2, 2, 2, 2))
+        h2 = np.zeros((2, 2, 2, 2))
+        h1[0, 0, 0, 0] = 1.0
+        h2[1, 1, 1, 1] = 1.0
+
+        assert pyemdgrid.knothe_rosenblatt(h1, h2, metric="l1") == pytest.approx(4.0)
+
+    def test_return_transport_plan_and_marginal_constraints(self):
+        h1 = np.array([[0.6, 0.4], [0.0, 0.0]])
+        h2 = np.array([[0.0, 0.0], [0.5, 0.5]])
+
+        cost, plan = pyemdgrid.knothe_rosenblatt(
+            h1, h2, metric="l1", return_transport_plan=True
+        )
+
+        assert scipy.sparse.issparse(plan)
+        assert plan.shape == (4, 4)
+        assert plan.sum() == pytest.approx(1.0)
+
+        plan_dense = plan.toarray()
+        assert np.sum(plan_dense, axis=1) == pytest.approx(h1.ravel())
+        assert np.sum(plan_dense, axis=0) == pytest.approx(h2.ravel())
+
+    def test_invalid_dimension_order_raises(self):
+        h1 = np.ones((2, 2)) / 4.0
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.knothe_rosenblatt(h1, h1, dimension_order=[0])
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.knothe_rosenblatt(h1, h1, dimension_order=[1, 1])
+
+    def test_invalid_metric_raises(self):
+        h1 = np.ones((2, 2)) / 4.0
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.knothe_rosenblatt(h1, h1, metric="invalid_metric")
+
+    def test_shape_mismatch_raises(self):
+        h1 = np.ones((2, 2)) / 4.0
+        h2 = np.ones((3, 3)) / 9.0
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.knothe_rosenblatt(h1, h2)
+
+
 class TestGreedyEmdL1ApproxBinding:
     """Basic correctness tests exercised via the Python binding for greedy_emd_l1_approx."""
 
