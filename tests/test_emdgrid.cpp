@@ -191,6 +191,7 @@ TEST_CASE("greedy_emd_l1_approx 2D: produces valid upper bound") {
   CHECK(approx_cost >= exact_cost);
 }
 
+// NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
 TEST_CASE(
     "greedy_emd_l1_approx 2D: transport plan computation and cost "
     "reconstruction") {
@@ -260,6 +261,7 @@ TEST_CASE("emd_l1 1D: transport plan computation") {
   CHECK(plan.flow[0] == doctest::Approx(1.0));
 }
 
+// NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
 TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
   const emdgrid::GridLayout<2> layout({2, 2});
   const std::vector<double> h1v = {1.0, 0.0, 0.0, 1.0};
