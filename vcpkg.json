@@ -1,0 +1,7 @@
+{
+  "name": "emdgrid",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "or-tools"
+  ]
+}

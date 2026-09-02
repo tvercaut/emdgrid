@@ -75,8 +75,8 @@ namespace emdgrid {
 /// @tparam Scalar     Input histogram scalar type.
 /// @tparam CompScalar Scalar type used for computation (default: double).
 template <std::size_t Dim, std::floating_point Scalar,
-          std::floating_point CompScalar = double>
-  requires(Dim >= 1)
+          std::floating_point CompScalar = double>  // NOLINT(*)
+  requires(Dim >= 1)  // NOLINT(whitespace/indent_namespace)
 [[nodiscard]] CompScalar mcf_l1(const GridDataView<Dim, Scalar>& h1,
                                 const GridDataView<Dim, Scalar>& h2,
                                 SparseTransportPlan* plan = nullptr,

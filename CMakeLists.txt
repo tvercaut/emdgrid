@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 
 project(emdgrid LANGUAGES CXX)
 
@@ -35,28 +35,41 @@ if(TARGET spdlog)
   set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
 endif()
 
-set(FETCHCONTENT_QUIET OFF)
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
-FetchContent_Declare(
-    ortools
-    GIT_REPOSITORY https://github.com/google/or-tools.git
-    GIT_TAG "v9.15"
-    GIT_SHALLOW TRUE
-)
-set(BUILD_DEPS ON CACHE BOOL "" FORCE)
-set(BUILD_TESTING ON CACHE BOOL "" FORCE)
-set(BUILD_FLATZINC OFF CACHE BOOL "" FORCE)
-set(BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_CXX_SAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_CXX_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_DOC OFF CACHE BOOL "" FORCE)
-set(USE_COINOR OFF CACHE BOOL "" FORCE)
-set(USE_HIGHS OFF CACHE BOOL "" FORCE)
-set(USE_SCIP OFF CACHE BOOL "" FORCE)
-set(BUILD_LP_PARSER OFF CACHE BOOL "" FORCE)
+find_package(ortools CONFIG QUIET)
 
-FetchContent_MakeAvailable(ortools)
+if(NOT TARGET ortools::ortools)
+  block()
+    set(FETCHCONTENT_QUIET ON)
+    set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+    FetchContent_Declare(
+        ortools
+        QUIET
+        SYSTEM
+        GIT_REPOSITORY https://github.com/google/or-tools.git
+        GIT_TAG "v9.15"
+        GIT_SHALLOW TRUE
+    )
+    set(BUILD_DEPS ON CACHE BOOL "" FORCE)
+    set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(BUILD_FLATZINC OFF CACHE BOOL "" FORCE)
+    set(BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_CXX_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_CXX_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+    set(BUILD_LP_PARSER OFF CACHE BOOL "" FORCE)
+
+    set(USE_COINOR OFF CACHE BOOL "" FORCE)
+    set(USE_HIGHS OFF CACHE BOOL "" FORCE)
+    set(USE_SCIP OFF CACHE BOOL "" FORCE)
+    set(USE_GLPK OFF CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(ortools)
+  endblock()
+  if(TARGET ortools AND NOT TARGET ortools::ortools)
+    add_library(ortools::ortools ALIAS ortools)
+  endif()
+endif()
 
 find_program(CLANG_TIDY_EXE NAMES clang-tidy)
 if(CLANG_TIDY_EXE)
