@@ -157,8 +157,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     for (std::size_t u = 0; u < n_nodes; ++u) {
       const std::ptrdiff_t u_idx = static_cast<std::ptrdiff_t>(u);
       if ((u_idx / st) % extent_ptrdiff < extent_ptrdiff - 1) {
-        const auto u_node = static_cast<operations_research::SimpleMinCostFlow::NodeIndex>(u);
-        const auto v = static_cast<operations_research::SimpleMinCostFlow::NodeIndex>(u + st);
+        using NodeIdx = operations_research::SimpleMinCostFlow::NodeIndex;
+        const auto u_node = static_cast<NodeIdx>(u);
+        const auto v = static_cast<NodeIdx>(u + st);
         mcf.AddArcWithCapacityAndUnitCost(u_node, v, cap_val, 1);
         mcf.AddArcWithCapacityAndUnitCost(v, u_node, cap_val, 1);
       }
@@ -167,8 +168,8 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     if (supply[i] != 0) {
-      mcf.SetNodeSupply(static_cast<operations_research::SimpleMinCostFlow::NodeIndex>(i),
-                        supply[i]);
+      using NodeIdx = operations_research::SimpleMinCostFlow::NodeIndex;
+      mcf.SetNodeSupply(static_cast<NodeIdx>(i), supply[i]);
     }
   }
 
