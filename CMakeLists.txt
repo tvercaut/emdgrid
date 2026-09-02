@@ -35,6 +35,29 @@ if(TARGET spdlog)
   set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
 endif()
 
+set(FETCHCONTENT_QUIET OFF)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+FetchContent_Declare(
+    ortools
+    GIT_REPOSITORY https://github.com/google/or-tools.git
+    GIT_TAG "v9.15"
+    GIT_SHALLOW TRUE
+)
+set(BUILD_DEPS ON CACHE BOOL "" FORCE)
+set(BUILD_TESTING ON CACHE BOOL "" FORCE)
+set(BUILD_FLATZINC OFF CACHE BOOL "" FORCE)
+set(BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_CXX_SAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_CXX_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+set(USE_COINOR OFF CACHE BOOL "" FORCE)
+set(USE_HIGHS OFF CACHE BOOL "" FORCE)
+set(USE_SCIP OFF CACHE BOOL "" FORCE)
+set(BUILD_LP_PARSER OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(ortools)
+
 find_program(CLANG_TIDY_EXE NAMES clang-tidy)
 if(CLANG_TIDY_EXE)
   set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_EXE})
@@ -51,7 +74,7 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>)
 target_compile_features(emdgrid PUBLIC cxx_std_23)
 
-target_link_libraries(emdgrid PUBLIC spdlog::spdlog)
+target_link_libraries(emdgrid PUBLIC spdlog::spdlog ortools::ortools)
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
