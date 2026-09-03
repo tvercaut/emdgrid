@@ -36,6 +36,22 @@ def parse_args():
     return parser.parse_args()
 
 
+def get_linux_distro_info():
+    os_release = Path("/etc/os-release")
+    if not os_release.exists():
+        return None, None
+
+    data = {}
+    for line in os_release.read_text(encoding="utf-8").splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            data[k.strip()] = v.strip().strip('"')
+
+    distro_id = data.get("ID")
+    version_id = data.get("VERSION_ID")
+    return distro_id, version_id
+
+
 def get_platform_patterns():
     system = platform.system()
     machine = platform.machine().lower()
@@ -47,22 +63,25 @@ def get_platform_patterns():
     else:
         raise RuntimeError(f"Unsupported architecture: {machine}")
 
+    distro_id, version_id = None, None
+
     if system == "Windows":
         os_patterns = ["win", "windows"]
         ext_patterns = [".zip"]
     elif system == "Linux":
         os_patterns = ["linux"]
         ext_patterns = [".tar.gz"]
+        distro_id, version_id = get_linux_distro_info()
     elif system == "Darwin":
         os_patterns = ["osx", "mac", "darwin"]
         ext_patterns = [".tar.gz", ".zip"]
     else:
         raise RuntimeError(f"Unsupported operating system: {system}")
 
-    return os_patterns, arch_patterns, ext_patterns
+    return os_patterns, arch_patterns, ext_patterns, distro_id, version_id
 
 
-def score_asset(name, os_patterns, arch_patterns, ext_patterns):
+def score_asset(name, os_patterns, arch_patterns, ext_patterns, distro_id, version_id):
     name_lower = name.lower()
 
     score = 0
@@ -78,6 +97,11 @@ def score_asset(name, os_patterns, arch_patterns, ext_patterns):
 
     if any(p in name_lower for p in arch_patterns):
         score += 10
+
+    if distro_id and distro_id.lower() in name_lower:
+        score += 50
+        if version_id and version_id.lower() in name_lower:
+            score += 20
 
     if any(name_lower.endswith(ext) for ext in ext_patterns):
         score += 5
@@ -148,7 +172,13 @@ def main():
     if not assets:
         raise RuntimeError("No assets found")
 
-    os_patterns, arch_patterns, ext_patterns = get_platform_patterns()
+    os_patterns, arch_patterns, ext_patterns, distro_id, version_id = (
+        get_platform_patterns()
+    )
+
+    print(
+        f"Platform: system={platform.system()}, machine={platform.machine()}, distro={distro_id}, version={version_id}"
+    )
 
     best_asset = max(
         assets,
@@ -157,6 +187,8 @@ def main():
             os_patterns,
             arch_patterns,
             ext_patterns,
+            distro_id,
+            version_id,
         ),
     )
 

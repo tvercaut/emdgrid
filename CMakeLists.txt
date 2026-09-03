@@ -40,7 +40,10 @@ endif()
 
 find_package(ortools)
 
-if(NOT TARGET ortools::ortools)
+if(TARGET ortools::ortools)
+  message(STATUS "Found ortools package target ortools::ortools.")
+else()
+  message(STATUS "ortools package target ortools::ortools not found via find_package. Falling back to FetchContent.")
   block()
     set(FETCHCONTENT_QUIET ON)
     set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
