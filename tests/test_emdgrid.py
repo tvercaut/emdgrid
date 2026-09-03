@@ -334,14 +334,14 @@ class TestDpartitionBinding:
         h2[1, 1, 1] = 1.0
 
         assert pyemdgrid.dpartition(h1, h2, metric="l1") == pytest.approx(3.0)
-        assert pyemdgrid.dpartition(h1, h2, metric="sqeuclidean") == pytest.approx(
-            3.0
-        )
+        assert pyemdgrid.dpartition(h1, h2, metric="sqeuclidean") == pytest.approx(3.0)
 
     def test_return_transport_plan_option(self):
         h1 = np.array([[0.5, 0.0], [0.0, 0.5]])
         h2 = np.array([[0.0, 0.5], [0.5, 0.0]])
-        cost, plan = pyemdgrid.dpartition(h1, h2, metric="sqeuclidean", return_transport_plan=True)
+        cost, plan = pyemdgrid.dpartition(
+            h1, h2, metric="sqeuclidean", return_transport_plan=True
+        )
         assert cost == pytest.approx(1.0)
         assert scipy.sparse.issparse(plan)
         assert plan.shape == (4, 4)
