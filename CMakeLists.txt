@@ -38,7 +38,7 @@ if(TARGET spdlog)
   set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
 endif()
 
-find_package(ortools CONFIG QUIET)
+find_package(ortools)
 
 if(NOT TARGET ortools::ortools)
   block()

@@ -70,3 +70,6 @@ Testing/
 .cache/
 __pycache__/
 *.egg-info/
+
+# misc
+.DS_Store
