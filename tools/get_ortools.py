@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -211,7 +212,17 @@ def main():
         print("Extracting archive...")
         extract_archive(archive, args.output_path)
 
-    print(f"Extracted to: {args.output_path.resolve()}")
+    extracted_dirs = list(args.output_path.glob("or-tools*"))
+    if not extracted_dirs:
+        raise RuntimeError("Extracted directory not found")
+
+    extracted_output_path = extracted_dirs[0].resolve()
+
+    if "GITHUB_OUTPUT" in os.environ:
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+            f.write(f"ortools_dir={extracted_output_path}\n")
+
+    print(f"Extracted to: {extracted_output_path}")
 
 
 if __name__ == "__main__":

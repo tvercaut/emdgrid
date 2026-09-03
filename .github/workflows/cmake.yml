@@ -49,31 +49,24 @@ jobs:
       run: echo "::add-matcher::.github/clang-tidy-matcher.json"
 
     - name: Download OR-Tools binaries
+      id: get_ortools
       run: python tools/get_ortools.py
 
     - name: Configure CMake
-      shell: bash
-      run: |
-        ls -la third_party/
-        ORTOOLS_DIR=$(python -c "import glob, os; print(os.path.abspath(glob.glob('third_party/or-tools*')[0]))")
-        echo "ORTOOLS_DIR is $ORTOOLS_DIR"
-        ls -la "$ORTOOLS_DIR"
-        cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_PREFIX_PATH="$ORTOOLS_DIR;$ORTOOLS_DIR/lib;$ORTOOLS_DIR/lib64;$ORTOOLS_DIR/lib/cmake/ortools;$ORTOOLS_DIR/lib64/cmake/ortools" -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
+      run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_PREFIX_PATH="${{ steps.get_ortools.outputs.ortools_dir }}" -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
 
     - name: Build
       shell: bash
       run: |
-        ORTOOLS_DIR=$(python -c "import glob, os; print(os.path.abspath(glob.glob('third_party/or-tools*')[0]))")
         if [ "${{ runner.os }}" = "Windows" ]; then
-          export PATH="$ORTOOLS_DIR/bin:$PATH"
+          export PATH="${{ steps.get_ortools.outputs.ortools_dir }}/bin:$PATH"
         fi
         cmake --build build --config ${{ env.BUILD_TYPE }}
 
     - name: Test
       shell: bash
       run: |
-        ORTOOLS_DIR=$(python -c "import glob, os; print(os.path.abspath(glob.glob('third_party/or-tools*')[0]))")
         if [ "${{ runner.os }}" = "Windows" ]; then
-          export PATH="$ORTOOLS_DIR/bin:$PATH"
+          export PATH="${{ steps.get_ortools.outputs.ortools_dir }}/bin:$PATH"
         fi
         ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
