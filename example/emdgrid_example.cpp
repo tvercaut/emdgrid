@@ -36,7 +36,8 @@ int main(int argc, char** argv) {
   app.add_flag("-p,--plan", compute_plan, "Compute sparse transport plan");
   app.add_option("-s,--solver", solver,
                  "Solver to run: 'emd_l1', 'mcf_l1', 'mcf_lemon_ns', "
-                 "'mcf_lemon_cs', 'greedy', 'kr', or 'all' (default: 'all')");
+                 "'mcf_lemon_cs', 'dpartion', 'greedy', 'kr', or 'all' "
+                 "(default: 'all')");
   app.add_option("-m,--metric", kr_metric_str,
                  "Knothe-Rosenblatt metric: 'l1' or 'sqeuclidean' "
                  "(default: 'l1')");
@@ -87,6 +88,8 @@ int main(int argc, char** argv) {
                                  solver == "mcf_lemon_ns");
   const bool run_mcf_lemon_cs = (solver == "all" || solver == "mcf_lemon" ||
                                  solver == "mcf_lemon_cs");
+  const bool run_dpartion = (solver == "all" || solver == "dpartion" ||
+                             solver == "mcf_dpartion");
   const bool run_greedy = (solver == "all" || solver == "greedy");
   const bool run_kr = (solver == "all" || solver == "kr" ||
                        solver == "knothe_rosenblatt");
@@ -148,6 +151,29 @@ int main(int argc, char** argv) {
     const double elapsed_ms = timer.elapsed_milliseconds();
 
     std::cout << "\n--- Min-Cost Flow EMD-L1 (LEMON CostScaling) ---\n";
+    std::cout << "Distance: " << dist << '\n';
+    std::cout << "Computation time: " << elapsed_ms << " ms\n";
+    if (compute_plan) {
+      std::cout << "Transport plan flow entries: " << plan.source.size()
+                << '\n';
+    }
+  }
+
+  if (run_dpartion) {
+    emdgrid::GroundMetric metric = emdgrid::GroundMetric::L1;
+    if (kr_metric_str == "sqeuclidean" ||
+        kr_metric_str == "squared_euclidean") {
+      metric = emdgrid::GroundMetric::SqEuclidean;
+    }
+
+    emdgrid::SparseTransportPlan plan;
+    const emdgrid::Timer timer;
+    const double dist = emdgrid::mcf_dpartion(
+        h1, h2, metric, emdgrid::McfLemonAlgorithm::NetworkSimplex,
+        compute_plan ? &plan : nullptr);
+    const double elapsed_ms = timer.elapsed_milliseconds();
+
+    std::cout << "\n--- dpartion MCF (Auricchio et al. 2018) ---\n";
     std::cout << "Distance: " << dist << '\n';
     std::cout << "Computation time: " << elapsed_ms << " ms\n";
     if (compute_plan) {
