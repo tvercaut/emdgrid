@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.25)
 
 project(emdgrid LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(cmake/GitVersion.cmake)
@@ -100,7 +103,7 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
          $<INSTALL_INTERFACE:include>)
-target_compile_features(emdgrid PUBLIC cxx_std_23)
+target_compile_features(emdgrid PUBLIC cxx_std_20)
 
 target_link_libraries(emdgrid PUBLIC spdlog::spdlog ortools::ortools)
 
