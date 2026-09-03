@@ -55,7 +55,7 @@ jobs:
       shell: bash
       run: |
         ORTOOLS_DIR=$(echo third_party/or-tools*)
-        cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_PREFIX_PATH="$PWD/$ORTOOLS_DIR" -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_PREFIX_PATH="$PWD/$ORTOOLS_DIR;$PWD/$ORTOOLS_DIR/lib64/cmake;$PWD/$ORTOOLS_DIR/lib/cmake" -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
 
     - name: Build
       shell: bash
