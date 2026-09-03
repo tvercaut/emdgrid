@@ -42,6 +42,21 @@ concept ValidDpartCost =
     !std::is_same_v<std::decay_t<T>, McfLemonAlgorithm> &&  // NOLINT(*)
     !std::is_same_v<std::decay_t<T>, GroundMetric>;         // NOLINT(*)
 
+template <typename T>
+concept HasExtractSelfMassMember = requires {
+  { std::decay_t<T>::extract_self_mass } -> std::convertible_to<bool>;
+};
+
+template <typename T>
+constexpr bool should_extract_self_mass_v = []() {
+  using CleanT = std::decay_t<T>;
+  if constexpr (HasExtractSelfMassMember<CleanT>) {
+    return CleanT::extract_self_mass;
+  } else {
+    return false;
+  }
+}();
+
 /// Edge with target node and positive flow value.
 struct FlowEdge {
   uint32_t head;
@@ -354,9 +369,17 @@ template <std::size_t Dim, std::floating_point Scalar,
   std::size_t max_abs_idx = 0;
   int64_t max_abs_val = -1;
 
+  constexpr bool do_extract_self_mass =
+      detail::should_extract_self_mass_v<CostFn>;
+
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const double v1 = static_cast<double>(h1.data()[i]);
-    const int64_t s1 = std::llround(v1 * scale);
+    const double v2 = static_cast<double>(h2.data()[i]);
+    const double self_mass = do_extract_self_mass ? std::min(v1, v2) : 0.0;
+
+    const int64_t s1 = std::llround((v1 - self_mass) * scale);
+    const int64_t s2 = -std::llround((v2 - self_mass) * scale);
+
     supply[i] = s1;
     total_supply_sum += s1;
 
@@ -365,11 +388,7 @@ template <std::size_t Dim, std::floating_point Scalar,
       max_abs_val = abs_s1;
       max_abs_idx = i;
     }
-  }
 
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double v2 = static_cast<double>(h2.data()[i]);
-    const int64_t s2 = -std::llround(v2 * scale);
     supply[layer_dim_offset + i] = s2;
     total_supply_sum += s2;
 
@@ -486,6 +505,19 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->source.clear();
     plan->target.clear();
     plan->flow.clear();
+
+    if constexpr (do_extract_self_mass) {
+      for (std::size_t i = 0; i < n_nodes; ++i) {
+        const double self_mass =
+            std::min(static_cast<double>(h1.data()[i]),
+                     static_cast<double>(h2.data()[i]));
+        if (self_mass > 0.0) {
+          plan->source.push_back(static_cast<uint32_t>(i));
+          plan->target.push_back(static_cast<uint32_t>(i));
+          plan->flow.push_back(self_mass);
+        }
+      }
+    }
 
     std::vector<int64_t> rem_supply = supply;
     std::vector<std::size_t> ptr(total_nodes, 0);

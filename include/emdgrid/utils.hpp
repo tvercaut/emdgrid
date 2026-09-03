@@ -18,6 +18,8 @@ enum class GroundMetric : std::uint8_t { L1, SqEuclidean };
 
 /// Default cost functor for L1 (Manhattan) ground metric.
 struct L1Cost {
+  static constexpr bool extract_self_mass = true;
+
   [[nodiscard]] int64_t operator()(std::size_t /*axis*/, std::size_t a,
                                   std::size_t b) const noexcept {
     const auto diff =
@@ -28,6 +30,8 @@ struct L1Cost {
 
 /// Default cost functor for SqEuclidean (squared Euclidean) ground metric.
 struct SqEuclideanCost {
+  static constexpr bool extract_self_mass = false;
+
   [[nodiscard]] int64_t operator()(std::size_t /*axis*/, std::size_t a,
                                   std::size_t b) const noexcept {
     const auto diff =
