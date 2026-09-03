@@ -438,10 +438,10 @@ template <std::size_t Dim, std::floating_point Scalar,
         continue;
       }
       for (std::size_t a_k = 0; a_k < extent_k; ++a_k) {
-        const std::size_t u = base_u + a_k * static_cast<std::size_t>(st_k);
+        const std::size_t u = base_u + (a_k * static_cast<std::size_t>(st_k));
         const Node src = nodes[layer_src_offset + u];
         for (std::size_t b_k = 0; b_k < extent_k; ++b_k) {
-          const std::size_t v = base_u + b_k * static_cast<std::size_t>(st_k);
+          const std::size_t v = base_u + (b_k * static_cast<std::size_t>(st_k));
           const Node dst = nodes[layer_dst_offset + v];
           const Arc arc = graph.addArc(src, dst);
           capacity[arc] = cap_val;

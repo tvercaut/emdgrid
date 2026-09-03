@@ -658,7 +658,7 @@ TEST_CASE("mcf_dpartion 2D: transport plan computation and reconstruction") {
       double dy = static_cast<double>(std::abs(c_src[1] - c_tgt[1]));
       double arc_dist = (metric == emdgrid::GroundMetric::L1)
                             ? (dx + dy)
-                            : (dx * dx + dy * dy);
+                            : ((dx * dx) + (dy * dy));
       reconstructed_cost += f * arc_dist;
     }
 
