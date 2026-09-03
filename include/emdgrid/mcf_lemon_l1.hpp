@@ -30,7 +30,7 @@
 namespace emdgrid {
 
 /// Algorithm variant for LEMON Min-Cost Flow solver.
-enum class McfLemonAlgorithm { NetworkSimplex, CostScaling };
+enum class McfLemonAlgorithm : std::uint8_t { NetworkSimplex, CostScaling };
 
 /// EMD-L1 for multi-dimensional grid histograms solved via Min-Cost Flow
 /// using LEMON (NetworkSimplex or CostScaling).
