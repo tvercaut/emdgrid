@@ -1,0 +1,9 @@
+[requires]
+or-tools/9.15
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout

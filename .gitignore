@@ -51,6 +51,7 @@ cmake_install.cmake
 Makefile
 install_manifest.txt
 compile_commands.json
+CMakeUserPresets.json
 
 # Temporary files
 *.tmp
@@ -69,3 +70,6 @@ Testing/
 .cache/
 __pycache__/
 *.egg-info/
+
+# misc
+.DS_Store
