@@ -291,13 +291,13 @@ class TestKnotheRosenblattBinding:
             pyemdgrid.knothe_rosenblatt(h1, h2)
 
 
-class TestDpartitionBinding:
-    """Basic correctness tests for pyemdgrid.dpartition."""
+class TestDpartionBinding:
+    """Basic correctness tests for pyemdgrid.dpartion."""
 
     def test_1d_identical_histograms_zero(self):
         h = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
-        assert pyemdgrid.dpartition(h, h, metric="l1") == pytest.approx(0.0)
-        assert pyemdgrid.dpartition(
+        assert pyemdgrid.dpartion(h, h, metric="l1") == pytest.approx(0.0)
+        assert pyemdgrid.dpartion(
             h, h, metric=pyemdgrid.GroundMetric.SqEuclidean
         ) == pytest.approx(0.0)
 
@@ -307,8 +307,8 @@ class TestDpartitionBinding:
         h1[0, 0] = 1.0
         h2[2, 2] = 1.0
 
-        c_l1 = pyemdgrid.dpartition(h1, h2, metric="l1")
-        c_sq = pyemdgrid.dpartition(h1, h2, metric="sqeuclidean")
+        c_l1 = pyemdgrid.dpartion(h1, h2, metric="l1")
+        c_sq = pyemdgrid.dpartion(h1, h2, metric="sqeuclidean")
 
         assert c_l1 == pytest.approx(4.0)
         assert c_sq == pytest.approx(8.0)
@@ -317,9 +317,9 @@ class TestDpartitionBinding:
         h1 = np.array([[0.5, 0.5], [0.0, 0.0]])
         h2 = np.array([[0.0, 0.0], [0.5, 0.5]])
 
-        c_ns = pyemdgrid.dpartition(h1, h2, algorithm="network_simplex")
-        c_cs = pyemdgrid.dpartition(h1, h2, algorithm="cost_scaling")
-        c_enum = pyemdgrid.dpartition(
+        c_ns = pyemdgrid.dpartion(h1, h2, algorithm="network_simplex")
+        c_cs = pyemdgrid.dpartion(h1, h2, algorithm="cost_scaling")
+        c_enum = pyemdgrid.dpartion(
             h1, h2, algorithm=pyemdgrid.McfLemonAlgorithm.CostScaling
         )
 
@@ -333,13 +333,13 @@ class TestDpartitionBinding:
         h1[0, 0, 0] = 1.0
         h2[1, 1, 1] = 1.0
 
-        assert pyemdgrid.dpartition(h1, h2, metric="l1") == pytest.approx(3.0)
-        assert pyemdgrid.dpartition(h1, h2, metric="sqeuclidean") == pytest.approx(3.0)
+        assert pyemdgrid.dpartion(h1, h2, metric="l1") == pytest.approx(3.0)
+        assert pyemdgrid.dpartion(h1, h2, metric="sqeuclidean") == pytest.approx(3.0)
 
     def test_return_transport_plan_option(self):
         h1 = np.array([[0.5, 0.0], [0.0, 0.5]])
         h2 = np.array([[0.0, 0.5], [0.5, 0.0]])
-        cost, plan = pyemdgrid.dpartition(
+        cost, plan = pyemdgrid.dpartion(
             h1, h2, metric="sqeuclidean", return_transport_plan=True
         )
         assert cost == pytest.approx(1.0)
@@ -351,7 +351,7 @@ class TestDpartitionBinding:
         h1 = np.array([1.0, 0.0, 0.0])
         h2 = np.array([0.0, 0.0, 0.0, 1.0])
         with pytest.raises((ValueError, RuntimeError)):
-            pyemdgrid.dpartition(h1, h2)
+            pyemdgrid.dpartion(h1, h2)
 
 
 class TestGreedyEmdL1ApproxBinding:
@@ -485,8 +485,8 @@ class TestEmdL1VsPot:
         assert np.allclose(our_G_dense, pot_G_dense, atol=1e-5, rtol=1e-5)
 
 
-class TestDpartitionVsPot:
-    """Compare pyemdgrid.dpartition against POT's ot.emd2 for 2D/3D grids."""
+class TestDpartionVsPot:
+    """Compare pyemdgrid.dpartion against POT's ot.emd2 for 2D/3D grids."""
 
     @pytest.fixture()
     def rng(self):
@@ -510,7 +510,7 @@ class TestDpartitionVsPot:
     )
     def test_l1_agrees_with_pot(self, rng, shape):
         h1, h2 = self._make_histograms(rng, shape)
-        cost_dpart = pyemdgrid.dpartition(h1, h2, metric="l1")
+        cost_dpart = pyemdgrid.dpartion(h1, h2, metric="l1")
         cost_pot = _emd_l1_via_pot(h1, h2)
         assert cost_dpart == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
 
@@ -524,7 +524,7 @@ class TestDpartitionVsPot:
     )
     def test_sqeuclidean_agrees_with_pot(self, rng, shape):
         h1, h2 = self._make_histograms(rng, shape)
-        cost_dpart = pyemdgrid.dpartition(h1, h2, metric="sqeuclidean")
+        cost_dpart = pyemdgrid.dpartion(h1, h2, metric="sqeuclidean")
 
         # Build explicit squared Euclidean cost matrix M
         ndim = len(shape)

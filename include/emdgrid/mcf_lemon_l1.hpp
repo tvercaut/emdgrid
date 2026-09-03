@@ -26,29 +26,9 @@
 #pragma pop_macro("MAX")
 
 #include "emdgrid/emdgrid.hpp"
-#include "emdgrid/knothe_rosenblatt_detail.hpp"
+#include "emdgrid/utils.hpp"
 
 namespace emdgrid {
-
-/// Default cost functor for L1 (Manhattan) ground metric.
-struct L1Cost {
-  [[nodiscard]] int64_t operator()(std::size_t /*axis*/, std::size_t a,
-                                  std::size_t b) const noexcept {
-    const auto diff =
-        static_cast<std::ptrdiff_t>(a) - static_cast<std::ptrdiff_t>(b);
-    return std::abs(diff);
-  }
-};
-
-/// Default cost functor for SqEuclidean (squared Euclidean) ground metric.
-struct SqEuclideanCost {
-  [[nodiscard]] int64_t operator()(std::size_t /*axis*/, std::size_t a,
-                                  std::size_t b) const noexcept {
-    const auto diff =
-        static_cast<std::ptrdiff_t>(a) - static_cast<std::ptrdiff_t>(b);
-    return diff * diff;
-  }
-};
 
 /// Algorithm variant for LEMON Min-Cost Flow solver.
 enum class McfLemonAlgorithm : std::uint8_t { NetworkSimplex, CostScaling };
@@ -326,7 +306,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 template <std::size_t Dim, std::floating_point Scalar,
           std::floating_point CompScalar = double, typename CostFn>  // NOLINT(*)
   requires(Dim >= 1 && detail::ValidDpartCost<CostFn>)                // NOLINT(*)
-[[nodiscard]] CompScalar mcf_dpartition(
+[[nodiscard]] CompScalar mcf_dpartion(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     CostFn&& cost_fn,
     McfLemonAlgorithm algo = McfLemonAlgorithm::NetworkSimplex,
@@ -537,34 +517,34 @@ template <std::size_t Dim, std::floating_point Scalar,
   return total_cost;
 }
 
-/// Overload of mcf_dpartition accepting GroundMetric enum.
+/// Overload of mcf_dpartion accepting GroundMetric enum.
 template <std::size_t Dim, std::floating_point Scalar,
           std::floating_point CompScalar = double>  // NOLINT(*)
   requires(Dim >= 1)                                 // NOLINT(*)
-[[nodiscard]] CompScalar mcf_dpartition(
+[[nodiscard]] CompScalar mcf_dpartion(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     GroundMetric metric,
     McfLemonAlgorithm algo = McfLemonAlgorithm::NetworkSimplex,
     SparseTransportPlan* plan = nullptr, double scale = 1e6,
     double mass_tol = 1e-6) {
   if (metric == GroundMetric::SqEuclidean) {
-    return mcf_dpartition<Dim, Scalar, CompScalar>(
+    return mcf_dpartion<Dim, Scalar, CompScalar>(
         h1, h2, SqEuclideanCost{}, algo, plan, scale, mass_tol);
   }
-  return mcf_dpartition<Dim, Scalar, CompScalar>(
+  return mcf_dpartion<Dim, Scalar, CompScalar>(
       h1, h2, L1Cost{}, algo, plan, scale, mass_tol);
 }
 
-/// Overload of mcf_dpartition defaulting to GroundMetric::L1.
+/// Overload of mcf_dpartion defaulting to GroundMetric::L1.
 template <std::size_t Dim, std::floating_point Scalar,
           std::floating_point CompScalar = double>  // NOLINT(*)
   requires(Dim >= 1)                                 // NOLINT(*)
-[[nodiscard]] CompScalar mcf_dpartition(
+[[nodiscard]] CompScalar mcf_dpartion(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     McfLemonAlgorithm algo = McfLemonAlgorithm::NetworkSimplex,
     SparseTransportPlan* plan = nullptr, double scale = 1e6,
     double mass_tol = 1e-6) {
-  return mcf_dpartition<Dim, Scalar, CompScalar>(
+  return mcf_dpartion<Dim, Scalar, CompScalar>(
       h1, h2, GroundMetric::L1, algo, plan, scale, mass_tol);
 }
 

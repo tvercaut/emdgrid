@@ -334,7 +334,7 @@ py::object knothe_rosenblatt_py(
 }
 
 template <std::size_t Dim>
-double dpartition_impl(
+double dpartion_impl(
     const py::array_t<double, py::array::c_style>& h1,
     const py::array_t<double, py::array::c_style>& h2,
     emdgrid::GroundMetric metric,
@@ -353,10 +353,10 @@ double dpartition_impl(
       layout, std::span<const double>(h1.data(), h1.size()));
   const emdgrid::GridDataView<Dim, double> v2(
       layout, std::span<const double>(h2.data(), h2.size()));
-  return emdgrid::mcf_dpartition(v1, v2, metric, algo, plan);
+  return emdgrid::mcf_dpartion(v1, v2, metric, algo, plan);
 }
 
-py::object dpartition_py(
+py::object dpartion_py(
     const py::array_t<double, py::array::c_style>& h1,
     const py::array_t<double, py::array::c_style>& h2,
     const py::object& metric_obj = py::cast("l1"),
@@ -378,20 +378,20 @@ py::object dpartition_py(
   double cost = 0.0;
   switch (h1.ndim()) {
     case 1:
-      cost = dpartition_impl<1>(h1, h2, metric, algo, plan_ptr);
+      cost = dpartion_impl<1>(h1, h2, metric, algo, plan_ptr);
       break;
     case 2:
-      cost = dpartition_impl<2>(h1, h2, metric, algo, plan_ptr);
+      cost = dpartion_impl<2>(h1, h2, metric, algo, plan_ptr);
       break;
     case 3:
-      cost = dpartition_impl<3>(h1, h2, metric, algo, plan_ptr);
+      cost = dpartion_impl<3>(h1, h2, metric, algo, plan_ptr);
       break;
     case 4:
-      cost = dpartition_impl<4>(h1, h2, metric, algo, plan_ptr);
+      cost = dpartion_impl<4>(h1, h2, metric, algo, plan_ptr);
       break;
     default:
       throw std::invalid_argument(
-          "dpartition supports 1-, 2-, 3-, or 4-dimensional histograms");
+          "dpartion supports 1-, 2-, 3-, or 4-dimensional histograms");
   }
 
   if (return_transport_plan) {
@@ -514,7 +514,7 @@ float or tuple(float, SparseTransportPlan)
       .export_values();
 
   module.def(
-      "dpartition", &dpartition_py,
+      "dpartion", &dpartion_py,
       py::arg("h1"), py::arg("h2"),
       py::arg("metric") = "l1",
       py::arg("algorithm") = "network_simplex",
