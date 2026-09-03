@@ -48,27 +48,17 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: echo "::add-matcher::.github/clang-tidy-matcher.json"
 
-    - name: Install Conan
-      run: python -m pip install "conan>=2.0"
-
-    - name: Conan Profile Detect
-      run: conan profile detect --force
-
-    - name: Install dependencies with Conan (non windows)
-      continue-on-error: false
-      if: runner.os != 'Windows'
-      run: conan install . -s build_type=Release
-
-    - name: Install dependencies with Conan (Windows)
-      continue-on-error: false
-      if: runner.os == 'Windows'
-      run: conan install . -s build_type=Release -s:b compiler.cppstd=20 -s:h compiler.cppstd=20
+    - name: Download OR-Tools binaries
+      run: python tools/get_ortools.py
 
     - name: Configure CMake
-      run: cmake --preset conan-release -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
+      shell: bash
+      run: |
+        ORTOOLS_DIR=$(echo third_party/or-tools*)
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_PREFIX_PATH="$PWD/$ORTOOLS_DIR" -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
 
     - name: Build
-      run: cmake --build --preset conan-release
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
 
     - name: Test
-      run: ctest --preset conan-release --output-on-failure
+      run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
