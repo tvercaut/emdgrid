@@ -25,7 +25,7 @@ template <std::floating_point Scalar = double>
 
   for (const Scalar x : input.subspan(1)) {
     if (x > max_val) {
-      normalizer = normalizer * std::exp(max_val - x) + Scalar{1};
+      normalizer = (normalizer * std::exp(max_val - x)) + Scalar{1};
       max_val = x;
     } else {
       normalizer += std::exp(x - max_val);

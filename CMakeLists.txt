@@ -26,14 +26,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile commands for too
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
-FetchContent_Declare(
+
+find_package(spdlog QUIET)
+if(spdlog_FOUND OR TARGET spdlog)
+  message(STATUS "Found spdlog: ${spdlog_DIR}")
+else()
+  message(STATUS "Could NOT find spdlog: Building it")
+  FetchContent_Declare(
     spdlog
-    QUIET
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG v1.17.0
     SYSTEM
-)
-FetchContent_MakeAvailable(spdlog)
+  )
+  FetchContent_MakeAvailable(spdlog)
+endif()
 if(TARGET spdlog)
   set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
 endif()
@@ -54,8 +60,10 @@ elseif(TARGET ortools::ortools)
 endif()
 
 find_package(LEMON QUIET)
-
-if(NOT LEMON_FOUND AND NOT TARGET lemon)
+if(LEMON_FOUND OR TARGET lemon)
+  message(STATUS "Found LEMON: ${LEMON_DIR}")
+else()
+  message(STATUS "Could NOT find LEMON: Building it")
   block()
     set(LEMON_ENABLE_COIN NO CACHE STRING "" FORCE)
     set(LEMON_ENABLE_GLPK NO CACHE STRING "" FORCE)
@@ -63,7 +71,6 @@ if(NOT LEMON_FOUND AND NOT TARGET lemon)
     set(LEMON_ENABLE_SOPLEX NO CACHE STRING "" FORCE)
     FetchContent_Declare(
         lemon
-        QUIET
         GIT_REPOSITORY https://github.com/The-OpenROAD-Project/lemon-graph
         GIT_TAG e9e3bc6dc0ffeda17eb2d2b4b296a68f03aec00d
         SYSTEM

@@ -699,7 +699,7 @@ TEST_CASE(
         layout.coordinates(static_cast<std::ptrdiff_t>(plan_sq.target[k]));
     double d0 = static_cast<double>(c_src[0] - c_tgt[0]);
     double d1 = static_cast<double>(c_src[1] - c_tgt[1]);
-    reconstructed_sq += plan_sq.flow[k] * (d0 * d0 + d1 * d1);
+    reconstructed_sq += plan_sq.flow[k] * ((d0 * d0) + (d1 * d1));
   }
   CHECK(reconstructed_sq == doctest::Approx(cost_sq));
 }

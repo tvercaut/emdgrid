@@ -1,11 +1,19 @@
 include(FetchContent)
-FetchContent_Declare(
-  doctest
-  GIT_REPOSITORY https://github.com/doctest/doctest.git
-  GIT_TAG v2.4.12
-  SYSTEM
-)
-FetchContent_MakeAvailable(doctest)
+
+find_package(doctest QUIET)
+if(doctest_FOUND OR TARGET doctest)
+  message(STATUS "Found doctest: ${doctest_DIR}")
+else()
+  message(STATUS "Could NOT find doctest: Building it")
+  FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG v2.5.3
+    SYSTEM
+  )
+  FetchContent_MakeAvailable(doctest)
+endif()
+set_target_properties(doctest PROPERTIES SYSTEM TRUE CXX_CLANG_TIDY "")
 
 add_executable(emdgrid_tests test_emdgrid.cpp)
 target_link_libraries(emdgrid_tests PRIVATE doctest::doctest emdgrid)

@@ -100,7 +100,7 @@ class GridDataView {
  public:
   using value_type = Scalar;
   using GridLayout = emdgrid::GridLayout<Dim>;
-  using Coordinates = typename GridLayout::Coordinates;
+  using Coordinates = GridLayout::Coordinates;
 
   GridDataView(const GridLayout& layout, std::span<const Scalar> data)
       : m_layout(layout), m_data(data) {
