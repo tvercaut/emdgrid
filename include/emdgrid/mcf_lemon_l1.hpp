@@ -389,6 +389,12 @@ template <std::size_t Dim, std::floating_point Scalar,
   Graph graph;
   graph.reserveNode(static_cast<int>(total_nodes));
 
+  std::size_t expected_arcs = 0;
+  for (std::size_t k = 0; k < Dim; ++k) {
+    expected_arcs += (n_nodes / shape[k]) * shape[k] * shape[k];
+  }
+  graph.reserveArc(static_cast<int>(expected_arcs));
+
   std::vector<Node> nodes;
   nodes.reserve(total_nodes);
   for (std::size_t i = 0; i < total_nodes; ++i) {
