@@ -15,6 +15,28 @@ from pathlib import Path
 RELEASE_TAG = "v9.15"
 API_URL = f"https://api.github.com/repos/google/or-tools/releases/tags/{RELEASE_TAG}"
 
+FALLBACK_CPP_ASSETS = [
+    "or-tools_aarch64_AlmaLinux-8.10_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_almalinux-9_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_alpine-edge_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_archlinux_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_debian-11_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_debian-12_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_debian-sid_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_fedora-40_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_fedora-41_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_fedora-42_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_opensuse-leap_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_rockylinux-9_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_ubuntu-20.04_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_ubuntu-22.04_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_ubuntu-24.04_cpp_v9.15.6755.tar.gz",
+    "or-tools_arm64_macOS-26.2_cpp_v9.15.6755.tar.gz",
+    "or-tools_x64_VisualStudio2022_cpp_v9.15.6755.zip",
+    "or-tools_x86_64_AlmaLinux-8.10_cpp_v9.15.6755.tar.gz",
+    "or-tools_x86_64_macOS-26.2_cpp_v9.15.6755.tar.gz",
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -111,9 +133,27 @@ def score_asset(name, os_patterns, arch_patterns, ext_patterns, distro_id, versi
 
 
 def fetch_release_metadata():
-    req = urllib.request.Request(API_URL, headers={"User-Agent": "python-urllib"})
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    headers = {"User-Agent": "python-urllib"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = urllib.request.Request(API_URL, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(
+            f"Warning: Failed to fetch release metadata via API ({e}). Using fallback asset list."
+        )
+        assets = [
+            {
+                "name": name,
+                "browser_download_url": f"https://github.com/google/or-tools/releases/download/{RELEASE_TAG}/{name}",
+            }
+            for name in FALLBACK_CPP_ASSETS
+        ]
+        return {"assets": assets}
 
 
 def download_file(url: str, destination: Path):

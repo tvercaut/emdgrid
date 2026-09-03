@@ -50,6 +50,8 @@ jobs:
 
     - name: Download OR-Tools binaries
       id: get_ortools
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: python tools/get_ortools.py
 
     - name: Configure CMake
