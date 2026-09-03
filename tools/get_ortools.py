@@ -4,11 +4,11 @@ import argparse
 import json
 import os
 import platform
-import subprocess
 import sys
 import tarfile
 import tempfile
 import traceback
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -67,14 +67,14 @@ def get_platform_patterns():
     distro_id, version_id = None, None
 
     if system == "Windows":
-        os_patterns = ["win", "windows"]
+        os_patterns = ["win", "windows", "visualstudio"]
         ext_patterns = [".zip"]
     elif system == "Linux":
         os_patterns = ["linux"]
         ext_patterns = [".tar.gz"]
         distro_id, version_id = get_linux_distro_info()
     elif system == "Darwin":
-        os_patterns = ["osx", "mac", "darwin"]
+        os_patterns = ["osx", "mac", "darwin", "macos"]
         ext_patterns = [".tar.gz", ".zip"]
     else:
         raise RuntimeError(f"Unsupported operating system: {system}")
@@ -94,10 +94,10 @@ def score_asset(name, os_patterns, arch_patterns, ext_patterns, distro_id, versi
         score -= 100
 
     if any(p in name_lower for p in os_patterns):
-        score += 10
+        score += 20
 
     if any(p in name_lower for p in arch_patterns):
-        score += 10
+        score += 20
 
     if distro_id and distro_id.lower() in name_lower:
         score += 50
@@ -111,41 +111,19 @@ def score_asset(name, os_patterns, arch_patterns, ext_patterns, distro_id, versi
 
 
 def fetch_release_metadata():
-    with tempfile.NamedTemporaryFile(
-        suffix=".json",
-        delete=False,
-    ) as tmp:
-        tmp_path = Path(tmp.name)
-
-    try:
-        subprocess.run(
-            [
-                "curl",
-                "-fsSL",
-                "-o",
-                str(tmp_path),
-                API_URL,
-            ],
-            check=True,
-        )
-
-        return json.loads(tmp_path.read_text(encoding="utf-8"))
-
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    req = urllib.request.Request(API_URL, headers={"User-Agent": "python-urllib"})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def download_file(url: str, destination: Path):
-    subprocess.run(
-        [
-            "curl",
-            "-fL",
-            "-o",
-            str(destination),
-            url,
-        ],
-        check=True,
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": "python-urllib"})
+    with urllib.request.urlopen(req) as resp, open(destination, "wb") as f:
+        while True:
+            chunk = resp.read(8192)
+            if not chunk:
+                break
+            f.write(chunk)
 
 
 def extract_archive(archive: Path, output_dir: Path):
