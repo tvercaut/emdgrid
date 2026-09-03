@@ -197,8 +197,8 @@ template <std::size_t Dim, std::floating_point Scalar,
       std::fill(v.begin(), v.end(), 0.0);
 
       for (std::size_t x = 0; x < extent; ++x) {
-        const std::size_t src_off = task.src_base_offset + x * dim_stride;
-        const std::size_t tgt_off = task.tgt_base_offset + x * dim_stride;
+        const std::size_t src_off = task.src_base_offset + (x * dim_stride);
+        const std::size_t tgt_off = task.tgt_base_offset + (x * dim_stride);
         double u_val = 0.0;
         double v_val = 0.0;
         for (const std::size_t delta : free_offsets) {
@@ -239,9 +239,9 @@ template <std::size_t Dim, std::floating_point Scalar,
         total_cost += branch_mass * dist_unit;
 
         const std::size_t child_src_off =
-            task.src_base_offset + flow_pair.src_idx * dim_stride;
+            task.src_base_offset + (flow_pair.src_idx * dim_stride);
         const std::size_t child_tgt_off =
-            task.tgt_base_offset + flow_pair.tgt_idx * dim_stride;
+            task.tgt_base_offset + (flow_pair.tgt_idx * dim_stride);
 
         if (k + 1 < Dim) {
           next_tasks.push_back({child_src_off, child_tgt_off, branch_mass});

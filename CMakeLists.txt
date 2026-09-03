@@ -26,14 +26,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile commands for too
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
-FetchContent_Declare(
+
+find_package(spdlog QUIET)
+if(spdlog_FOUND OR TARGET spdlog)
+  message(STATUS "Found spdlog: ${spdlog_DIR}")
+else()
+  message(STATUS "Could NOT find spdlog: Building it")
+  FetchContent_Declare(
     spdlog
-    QUIET
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG v1.17.0
     SYSTEM
-)
-FetchContent_MakeAvailable(spdlog)
+  )
+  FetchContent_MakeAvailable(spdlog)
+endif()
 if(TARGET spdlog)
   set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
 endif()
@@ -53,6 +59,42 @@ elseif(TARGET ortools::ortools)
   endif()
 endif()
 
+find_package(LEMON QUIET)
+if(LEMON_FOUND OR TARGET lemon)
+  message(STATUS "Found LEMON: ${LEMON_DIR}")
+else()
+  message(STATUS "Could NOT find LEMON: Building it")
+  block()
+    set(LEMON_ENABLE_COIN NO CACHE STRING "" FORCE)
+    set(LEMON_ENABLE_GLPK NO CACHE STRING "" FORCE)
+    set(LEMON_ENABLE_ILOG NO CACHE STRING "" FORCE)
+    set(LEMON_ENABLE_SOPLEX NO CACHE STRING "" FORCE)
+    FetchContent_Declare(
+        lemon
+        GIT_REPOSITORY https://github.com/The-OpenROAD-Project/lemon-graph
+        GIT_TAG e9e3bc6dc0ffeda17eb2d2b4b296a68f03aec00d
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(lemon)
+  endblock()
+endif()
+
+if(TARGET lemon)
+  target_include_directories(lemon INTERFACE
+    $<BUILD_INTERFACE:${LEMON_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${LEMON_BINARY_DIR}>
+  )
+  set_target_properties(lemon PROPERTIES SYSTEM TRUE CXX_CLANG_TIDY "")
+  if(NOT TARGET lemon::lemon)
+    add_library(lemon::lemon ALIAS lemon)
+  endif()
+elseif(TARGET lemon::lemon)
+  get_target_property(is_alias lemon::lemon ALIASED_TARGET)
+  if(NOT is_alias)
+    set_target_properties(lemon::lemon PROPERTIES SYSTEM TRUE CXX_CLANG_TIDY "")
+  endif()
+endif()
+
 find_program(CLANG_TIDY_EXE NAMES clang-tidy)
 if(CLANG_TIDY_EXE)
   set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_EXE})
@@ -69,7 +111,7 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>)
 target_compile_features(emdgrid PUBLIC cxx_std_23)
 
-target_link_libraries(emdgrid PUBLIC spdlog::spdlog ortools::ortools)
+target_link_libraries(emdgrid PUBLIC spdlog::spdlog ortools::ortools lemon::lemon)
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

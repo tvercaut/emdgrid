@@ -105,7 +105,7 @@ py::object emd_sqeuclidean_1d_py(
   emdgrid::SparseTransportPlan* plan_ptr =
       return_transport_plan ? &plan : nullptr;
 
-  typename emdgrid::GridLayout<1>::Shape shape{
+  emdgrid::GridLayout<1>::Shape shape{
       static_cast<std::size_t>(h1.shape(0))};
   const emdgrid::GridLayout<1> layout(shape);
   const emdgrid::GridDataView<1, double> v1(

@@ -11,6 +11,7 @@
 #include "emdgrid/greedy_emd_l1.hpp"
 #include "emdgrid/knothe_rosenblatt.hpp"
 #include "emdgrid/mcf_l1.hpp"
+#include "emdgrid/mcf_lemon_l1.hpp"
 #include "emdgrid/utils.hpp"
 #include "emdgrid/version.hpp"
 
@@ -358,6 +359,139 @@ TEST_CASE("mcf_l1 2D: unnormalized mass throws") {
                   std::invalid_argument);
 }
 
+// ============================================================================
+//  mcf_lemon_l1 tests
+// ============================================================================
+
+TEST_CASE("mcf_lemon_l1 1D: identical histograms give zero") {
+  const emdgrid::GridLayout<1> layout({5});
+  const std::vector<double> v = {0.1, 0.2, 0.4, 0.2, 0.1};
+  const emdgrid::GridDataView<1, double> h(layout, std::span(v));
+  CHECK(emdgrid::mcf_lemon_l1(
+            h, h, emdgrid::McfLemonAlgorithm::NetworkSimplex) ==
+        doctest::Approx(0.0));
+  CHECK(emdgrid::mcf_lemon_l1(
+            h, h, emdgrid::McfLemonAlgorithm::CostScaling) ==
+        doctest::Approx(0.0));
+}
+
+TEST_CASE("mcf_lemon_l1 2D: unit shift along one axis costs 1") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 1.0, 0.0, 0.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::mcf_lemon_l1(
+            h1, h2, emdgrid::McfLemonAlgorithm::NetworkSimplex) ==
+        doctest::Approx(1.0));
+  CHECK(emdgrid::mcf_lemon_l1(
+            h1, h2, emdgrid::McfLemonAlgorithm::CostScaling) ==
+        doctest::Approx(1.0));
+}
+
+TEST_CASE("mcf_lemon_l1 3D: diagonal shift costs 3") {
+  const emdgrid::GridLayout<3> layout({2, 2, 2});
+  std::vector<double> h1v(8, 0.0);
+  std::vector<double> h2v(8, 0.0);
+  h1v[0] = 1.0;
+  h2v[7] = 1.0;
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2v));
+  CHECK(emdgrid::mcf_lemon_l1(
+            h1, h2, emdgrid::McfLemonAlgorithm::NetworkSimplex) ==
+        doctest::Approx(3.0));
+  CHECK(emdgrid::mcf_lemon_l1(
+            h1, h2, emdgrid::McfLemonAlgorithm::CostScaling) ==
+        doctest::Approx(3.0));
+}
+
+TEST_CASE("mcf_lemon_l1 3D: matches emd_l1 and mcf_l1 on random histograms") {
+  constexpr std::size_t dim = 5;
+  const emdgrid::GridLayout<3> layout({dim, dim, dim});
+  const std::size_t n_bins = layout.node_count();
+
+  const std::vector<double> h1_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 42);
+  const std::vector<double> h2_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 1337);
+
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+  const double dist_emd = emdgrid::emd_l1(h1, h2);
+  const double dist_lemon_ns = emdgrid::mcf_lemon_l1(
+      h1, h2, emdgrid::McfLemonAlgorithm::NetworkSimplex);
+  const double dist_lemon_cs = emdgrid::mcf_lemon_l1(
+      h1, h2, emdgrid::McfLemonAlgorithm::CostScaling);
+
+  CHECK(dist_lemon_ns == doctest::Approx(dist_emd).epsilon(1e-4));
+  CHECK(dist_lemon_cs == doctest::Approx(dist_emd).epsilon(1e-4));
+}
+
+TEST_CASE(
+    "mcf_lemon_l1 2D: transport plan computation and cost reconstruction") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1_norm = {0.5, 0.0, 0.0, 0.5};
+  const std::vector<double> h2_norm = {0.0, 0.5, 0.5, 0.0};
+
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1_norm));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2_norm));
+
+  for (auto algo : {emdgrid::McfLemonAlgorithm::NetworkSimplex,
+                    emdgrid::McfLemonAlgorithm::CostScaling}) {
+    emdgrid::SparseTransportPlan plan;
+    double cost = emdgrid::mcf_lemon_l1(h1, h2, algo, &plan);
+    CHECK(cost == doctest::Approx(1.0));
+
+    REQUIRE(!plan.flow.empty());
+
+    double reconstructed_cost = 0.0;
+    double total_flow = 0.0;
+    bool all_positive = true;
+
+    for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+      uint32_t src = plan.source[k];
+      uint32_t tgt = plan.target[k];
+      double f = plan.flow[k];
+      if (f <= 0.0) {
+        all_positive = false;
+      }
+      total_flow += f;
+
+      auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
+      auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
+      double l1_dist = static_cast<double>(std::abs(c_src[0] - c_tgt[0]) +
+                                           std::abs(c_src[1] - c_tgt[1]));
+      reconstructed_cost += f * l1_dist;
+    }
+
+    CHECK(all_positive);
+    CHECK(total_flow == doctest::Approx(1.0));
+    CHECK(reconstructed_cost == doctest::Approx(cost));
+  }
+}
+
+TEST_CASE("mcf_lemon_l1 2D: shape mismatch throws") {
+  const emdgrid::GridLayout<2> layout2({2, 2});
+  const emdgrid::GridLayout<2> layout3({3, 3});
+  const std::vector<double> v4(4, 0.25);
+  const std::vector<double> v9(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h4(layout2, std::span(v4));
+  const emdgrid::GridDataView<2, double> h9(layout3, std::span(v9));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::mcf_lemon_l1(h4, h9)),
+                  std::invalid_argument);
+}
+
+TEST_CASE("mcf_lemon_l1 2D: unnormalized mass throws") {
+  const emdgrid::GridLayout<2> layout2({2, 2});
+  const std::vector<double> v1(4, 0.25);
+  const std::vector<double> v2(4, 0.50);
+  const emdgrid::GridDataView<2, double> h1(layout2, std::span(v1));
+  const emdgrid::GridDataView<2, double> h2(layout2, std::span(v2));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::mcf_lemon_l1(h1, h2)),
+                  std::invalid_argument);
+}
+
 TEST_CASE("emd_l1 3D: max_iter parameter exposure and convergence") {
   constexpr std::size_t dim = 16;
   const emdgrid::GridLayout<3> layout({dim, dim, dim});
@@ -565,7 +699,7 @@ TEST_CASE(
         layout.coordinates(static_cast<std::ptrdiff_t>(plan_sq.target[k]));
     double d0 = static_cast<double>(c_src[0] - c_tgt[0]);
     double d1 = static_cast<double>(c_src[1] - c_tgt[1]);
-    reconstructed_sq += plan_sq.flow[k] * (d0 * d0 + d1 * d1);
+    reconstructed_sq += plan_sq.flow[k] * ((d0 * d0) + (d1 * d1));
   }
   CHECK(reconstructed_sq == doctest::Approx(cost_sq));
 }
