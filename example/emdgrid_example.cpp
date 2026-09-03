@@ -15,6 +15,7 @@
 #include "emdgrid/greedy_emd_l1.hpp"
 #include "emdgrid/knothe_rosenblatt.hpp"
 #include "emdgrid/mcf_l1.hpp"
+#include "emdgrid/mcf_lemon_l1.hpp"
 #include "emdgrid/utils.hpp"
 
 int main(int argc, char** argv) {
@@ -34,8 +35,8 @@ int main(int argc, char** argv) {
                  "Grid extent along each 3D axis (default: 10)");
   app.add_flag("-p,--plan", compute_plan, "Compute sparse transport plan");
   app.add_option("-s,--solver", solver,
-                 "Solver to run: 'emd_l1', 'mcf_l1', 'greedy', 'kr', or 'all' "
-                 "(default: 'all')");
+                 "Solver to run: 'emd_l1', 'mcf_l1', 'mcf_lemon_ns', "
+                 "'mcf_lemon_cs', 'greedy', 'kr', or 'all' (default: 'all')");
   app.add_option("-m,--metric", kr_metric_str,
                  "Knothe-Rosenblatt metric: 'l1' or 'sqeuclidean' "
                  "(default: 'l1')");
@@ -82,6 +83,10 @@ int main(int argc, char** argv) {
                            solver == "exact");
   const bool run_mcf_l1 = (solver == "all" || solver == "mcf_l1" ||
                            solver == "mcf");
+  const bool run_mcf_lemon_ns = (solver == "all" || solver == "mcf_lemon" ||
+                                 solver == "mcf_lemon_ns");
+  const bool run_mcf_lemon_cs = (solver == "all" || solver == "mcf_lemon" ||
+                                 solver == "mcf_lemon_cs");
   const bool run_greedy = (solver == "all" || solver == "greedy");
   const bool run_kr = (solver == "all" || solver == "kr" ||
                        solver == "knothe_rosenblatt");
@@ -109,6 +114,40 @@ int main(int argc, char** argv) {
     const double elapsed_ms = timer.elapsed_milliseconds();
 
     std::cout << "\n--- Min-Cost Flow EMD-L1 (OR-Tools) ---\n";
+    std::cout << "Distance: " << dist << '\n';
+    std::cout << "Computation time: " << elapsed_ms << " ms\n";
+    if (compute_plan) {
+      std::cout << "Transport plan flow entries: " << plan.source.size()
+                << '\n';
+    }
+  }
+
+  if (run_mcf_lemon_ns) {
+    emdgrid::SparseTransportPlan plan;
+    const emdgrid::Timer timer;
+    const double dist = emdgrid::mcf_lemon_l1(
+        h1, h2, emdgrid::McfLemonAlgorithm::NetworkSimplex,
+        compute_plan ? &plan : nullptr);
+    const double elapsed_ms = timer.elapsed_milliseconds();
+
+    std::cout << "\n--- Min-Cost Flow EMD-L1 (LEMON NetworkSimplex) ---\n";
+    std::cout << "Distance: " << dist << '\n';
+    std::cout << "Computation time: " << elapsed_ms << " ms\n";
+    if (compute_plan) {
+      std::cout << "Transport plan flow entries: " << plan.source.size()
+                << '\n';
+    }
+  }
+
+  if (run_mcf_lemon_cs) {
+    emdgrid::SparseTransportPlan plan;
+    const emdgrid::Timer timer;
+    const double dist = emdgrid::mcf_lemon_l1(
+        h1, h2, emdgrid::McfLemonAlgorithm::CostScaling,
+        compute_plan ? &plan : nullptr);
+    const double elapsed_ms = timer.elapsed_milliseconds();
+
+    std::cout << "\n--- Min-Cost Flow EMD-L1 (LEMON CostScaling) ---\n";
     std::cout << "Distance: " << dist << '\n';
     std::cout << "Computation time: " << elapsed_ms << " ms\n";
     if (compute_plan) {
