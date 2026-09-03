@@ -2,19 +2,40 @@
 
 import argparse
 import json
+import os
 import platform
-import subprocess
 import sys
 import tarfile
 import tempfile
 import traceback
+import urllib.request
 import zipfile
 from pathlib import Path
 
 RELEASE_TAG = "v9.15"
-API_URL = (
-    f"https://api.github.com/repos/google/or-tools/releases/tags/{RELEASE_TAG}"
-)
+API_URL = f"https://api.github.com/repos/google/or-tools/releases/tags/{RELEASE_TAG}"
+
+FALLBACK_CPP_ASSETS = [
+    "or-tools_aarch64_AlmaLinux-8.10_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_almalinux-9_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_alpine-edge_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_archlinux_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_debian-11_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_debian-12_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_debian-sid_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_fedora-40_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_fedora-41_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_fedora-42_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_opensuse-leap_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_rockylinux-9_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_ubuntu-20.04_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_ubuntu-22.04_cpp_v9.15.6755.tar.gz",
+    "or-tools_amd64_ubuntu-24.04_cpp_v9.15.6755.tar.gz",
+    "or-tools_arm64_macOS-26.2_cpp_v9.15.6755.tar.gz",
+    "or-tools_x64_VisualStudio2022_cpp_v9.15.6755.zip",
+    "or-tools_x86_64_AlmaLinux-8.10_cpp_v9.15.6755.tar.gz",
+    "or-tools_x86_64_macOS-26.2_cpp_v9.15.6755.tar.gz",
+]
 
 
 def parse_args():
@@ -38,6 +59,22 @@ def parse_args():
     return parser.parse_args()
 
 
+def get_linux_distro_info():
+    os_release = Path("/etc/os-release")
+    if not os_release.exists():
+        return None, None
+
+    data = {}
+    for line in os_release.read_text(encoding="utf-8").splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            data[k.strip()] = v.strip().strip('"')
+
+    distro_id = data.get("ID")
+    version_id = data.get("VERSION_ID")
+    return distro_id, version_id
+
+
 def get_platform_patterns():
     system = platform.system()
     machine = platform.machine().lower()
@@ -49,22 +86,25 @@ def get_platform_patterns():
     else:
         raise RuntimeError(f"Unsupported architecture: {machine}")
 
+    distro_id, version_id = None, None
+
     if system == "Windows":
-        os_patterns = ["win", "windows"]
+        os_patterns = ["win", "windows", "visualstudio"]
         ext_patterns = [".zip"]
     elif system == "Linux":
         os_patterns = ["linux"]
         ext_patterns = [".tar.gz"]
+        distro_id, version_id = get_linux_distro_info()
     elif system == "Darwin":
-        os_patterns = ["osx", "mac", "darwin"]
+        os_patterns = ["osx", "mac", "darwin", "macos"]
         ext_patterns = [".tar.gz", ".zip"]
     else:
         raise RuntimeError(f"Unsupported operating system: {system}")
 
-    return os_patterns, arch_patterns, ext_patterns
+    return os_patterns, arch_patterns, ext_patterns, distro_id, version_id
 
 
-def score_asset(name, os_patterns, arch_patterns, ext_patterns):
+def score_asset(name, os_patterns, arch_patterns, ext_patterns, distro_id, version_id):
     name_lower = name.lower()
 
     score = 0
@@ -76,10 +116,15 @@ def score_asset(name, os_patterns, arch_patterns, ext_patterns):
         score -= 100
 
     if any(p in name_lower for p in os_patterns):
-        score += 10
+        score += 20
 
     if any(p in name_lower for p in arch_patterns):
-        score += 10
+        score += 20
+
+    if distro_id and distro_id.lower() in name_lower:
+        score += 50
+        if version_id and version_id.lower() in name_lower:
+            score += 20
 
     if any(name_lower.endswith(ext) for ext in ext_patterns):
         score += 5
@@ -88,41 +133,37 @@ def score_asset(name, os_patterns, arch_patterns, ext_patterns):
 
 
 def fetch_release_metadata():
-    with tempfile.NamedTemporaryFile(
-        suffix=".json",
-        delete=False,
-    ) as tmp:
-        tmp_path = Path(tmp.name)
+    headers = {"User-Agent": "python-urllib"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
+    req = urllib.request.Request(API_URL, headers=headers)
     try:
-        subprocess.run(
-            [
-                "curl",
-                "-fsSL",
-                "-o",
-                str(tmp_path),
-                API_URL,
-            ],
-            check=True,
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(
+            f"Warning: Failed to fetch release metadata via API ({e}). Using fallback asset list."
         )
-
-        return json.loads(tmp_path.read_text(encoding="utf-8"))
-
-    finally:
-        tmp_path.unlink(missing_ok=True)
+        assets = [
+            {
+                "name": name,
+                "browser_download_url": f"https://github.com/google/or-tools/releases/download/{RELEASE_TAG}/{name}",
+            }
+            for name in FALLBACK_CPP_ASSETS
+        ]
+        return {"assets": assets}
 
 
 def download_file(url: str, destination: Path):
-    subprocess.run(
-        [
-            "curl",
-            "-fL",
-            "-o",
-            str(destination),
-            url,
-        ],
-        check=True,
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": "python-urllib"})
+    with urllib.request.urlopen(req) as resp, open(destination, "wb") as f:
+        while True:
+            chunk = resp.read(8192)
+            if not chunk:
+                break
+            f.write(chunk)
 
 
 def extract_archive(archive: Path, output_dir: Path):
@@ -150,7 +191,13 @@ def main():
     if not assets:
         raise RuntimeError("No assets found")
 
-    os_patterns, arch_patterns, ext_patterns = get_platform_patterns()
+    os_patterns, arch_patterns, ext_patterns, distro_id, version_id = (
+        get_platform_patterns()
+    )
+
+    print(
+        f"Platform: system={platform.system()}, machine={platform.machine()}, distro={distro_id}, version={version_id}"
+    )
 
     best_asset = max(
         assets,
@@ -159,6 +206,8 @@ def main():
             os_patterns,
             arch_patterns,
             ext_patterns,
+            distro_id,
+            version_id,
         ),
     )
 
@@ -181,7 +230,17 @@ def main():
         print("Extracting archive...")
         extract_archive(archive, args.output_path)
 
-    print(f"Extracted to: {args.output_path.resolve()}")
+    extracted_dirs = list(args.output_path.glob("or-tools*"))
+    if not extracted_dirs:
+        raise RuntimeError("Extracted directory not found")
+
+    extracted_output_path = extracted_dirs[0].resolve()
+
+    if "GITHUB_OUTPUT" in os.environ:
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+            f.write(f"ortools_dir={extracted_output_path}\n")
+
+    print(f"Extracted to: {extracted_output_path}")
 
 
 if __name__ == "__main__":
