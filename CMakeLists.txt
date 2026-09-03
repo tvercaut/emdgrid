@@ -38,49 +38,10 @@ if(TARGET spdlog)
   set_target_properties(spdlog PROPERTIES CXX_CLANG_TIDY "")
 endif()
 
-find_package(ortools)
+find_package(ortools REQUIRED)
 
-if(TARGET ortools::ortools)
-  message(STATUS "Found ortools package target ortools::ortools.")
-else()
-  message(STATUS "ortools package target ortools::ortools not found via find_package. Falling back to FetchContent.")
-  block()
-    set(FETCHCONTENT_QUIET ON)
-    set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
-    FetchContent_Declare(
-        ortools
-        QUIET
-        SYSTEM
-        GIT_REPOSITORY https://github.com/google/or-tools.git
-        GIT_TAG "v9.15"
-        GIT_SHALLOW TRUE
-    )
-    set(BUILD_DEPS ON CACHE BOOL "" FORCE)
-    set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-    set(BUILD_FLATZINC OFF CACHE BOOL "" FORCE)
-    set(BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_CXX_SAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_CXX_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_DOC OFF CACHE BOOL "" FORCE)
-    set(BUILD_MATH_OPT OFF CACHE BOOL "" FORCE)
-    set(BUILD_LP_PARSER OFF CACHE BOOL "" FORCE)
-
-    set(USE_BOP OFF CACHE BOOL "" FORCE)
-    set(USE_COINOR OFF CACHE BOOL "" FORCE)
-    set(USE_GLOP OFF CACHE BOOL "" FORCE)
-    set(USE_GLPK OFF CACHE BOOL "" FORCE)
-    set(USE_GUROBI OFF CACHE BOOL "" FORCE)
-    set(USE_HIGHS OFF CACHE BOOL "" FORCE)
-    set(USE_PDLP OFF CACHE BOOL "" FORCE)
-    set(USE_SCIP OFF CACHE BOOL "" FORCE)
-    set(USE_XPRESS OFF CACHE BOOL "" FORCE)
-
-    FetchContent_MakeAvailable(ortools)
-  endblock()
-  if(TARGET ortools AND NOT TARGET ortools::ortools)
-    add_library(ortools::ortools ALIAS ortools)
-  endif()
+if(TARGET ortools AND NOT TARGET ortools::ortools)
+  add_library(ortools::ortools ALIAS ortools)
 endif()
 
 if(TARGET ortools)
