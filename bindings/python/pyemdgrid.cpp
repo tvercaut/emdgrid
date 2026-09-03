@@ -11,6 +11,7 @@
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/greedy_emd_l1.hpp"
 #include "emdgrid/knothe_rosenblatt.hpp"
+#include "emdgrid/mcf_lemon_l1.hpp"
 
 namespace py = pybind11;
 
@@ -204,6 +205,28 @@ py::object greedy_emd_l1_approx_py(
   return py::cast(cost);
 }
 
+emdgrid::McfLemonAlgorithm parse_mcf_lemon_algorithm(const py::object& obj) {
+  if (py::isinstance<emdgrid::McfLemonAlgorithm>(obj)) {
+    return obj.cast<emdgrid::McfLemonAlgorithm>();
+  }
+  if (py::isinstance<py::str>(obj)) {
+    std::string s = obj.cast<std::string>();
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    if (s == "network_simplex" || s == "networksimplex" || s == "ns") {
+      return emdgrid::McfLemonAlgorithm::NetworkSimplex;
+    }
+    if (s == "cost_scaling" || s == "costscaling" || s == "cs") {
+      return emdgrid::McfLemonAlgorithm::CostScaling;
+    }
+    throw std::invalid_argument(
+        "Invalid algorithm string. Expected 'network_simplex' or "
+        "'cost_scaling'.");
+  }
+  throw std::invalid_argument(
+      "algorithm must be a McfLemonAlgorithm enum or string");
+}
+
 emdgrid::GroundMetric parse_ground_metric(const py::object& obj) {
   if (py::isinstance<emdgrid::GroundMetric>(obj)) {
     return obj.cast<emdgrid::GroundMetric>();
@@ -291,6 +314,84 @@ py::object knothe_rosenblatt_py(
       throw std::invalid_argument(
           "knothe_rosenblatt only supports 1-, 2-, 3-, or 4-dimensional"
           " histograms");
+  }
+
+  if (return_transport_plan) {
+    py::object coo_matrix;
+    try {
+      py::module_ scipy_sparse = py::module_::import("scipy.sparse");
+      std::size_t n_nodes = static_cast<std::size_t>(h1.size());
+      coo_matrix = scipy_sparse.attr("coo_matrix")(
+          py::make_tuple(plan.flow,
+                         py::make_tuple(plan.source, plan.target)),
+          py::make_tuple(n_nodes, n_nodes));
+    } catch (const py::error_already_set&) {
+      return py::make_tuple(cost, plan);
+    }
+    return py::make_tuple(cost, coo_matrix);
+  }
+  return py::cast(cost);
+}
+
+template <std::size_t Dim>
+double dpartion_impl(
+    const py::array_t<double, py::array::c_style>& h1,
+    const py::array_t<double, py::array::c_style>& h2,
+    emdgrid::GroundMetric metric,
+    emdgrid::McfLemonAlgorithm algo,
+    emdgrid::SparseTransportPlan* plan = nullptr) {
+  if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
+      h2.ndim() != static_cast<py::ssize_t>(Dim)) {
+    throw std::invalid_argument("array dimensionality does not match Dim");
+  }
+  typename emdgrid::GridLayout<Dim>::Shape shape{};
+  for (std::size_t a = 0; a < Dim; ++a) {
+    shape[a] = static_cast<std::size_t>(h1.shape(static_cast<py::ssize_t>(a)));
+  }
+  const emdgrid::GridLayout<Dim> layout(shape);
+  const emdgrid::GridDataView<Dim, double> v1(
+      layout, std::span<const double>(h1.data(), h1.size()));
+  const emdgrid::GridDataView<Dim, double> v2(
+      layout, std::span<const double>(h2.data(), h2.size()));
+  return emdgrid::mcf_dpartion(v1, v2, metric, algo, plan);
+}
+
+py::object dpartion_py(
+    const py::array_t<double, py::array::c_style>& h1,
+    const py::array_t<double, py::array::c_style>& h2,
+    const py::object& metric_obj = py::cast("l1"),
+    const py::object& algo_obj = py::cast("network_simplex"),
+    bool return_transport_plan = false) {
+  if (h1.ndim() != h2.ndim()) {
+    throw std::invalid_argument(
+        "h1 and h2 must have the same number of dimensions");
+  }
+
+  const emdgrid::GroundMetric metric = parse_ground_metric(metric_obj);
+  const emdgrid::McfLemonAlgorithm algo =
+      parse_mcf_lemon_algorithm(algo_obj);
+
+  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan* plan_ptr =
+      return_transport_plan ? &plan : nullptr;
+
+  double cost = 0.0;
+  switch (h1.ndim()) {
+    case 1:
+      cost = dpartion_impl<1>(h1, h2, metric, algo, plan_ptr);
+      break;
+    case 2:
+      cost = dpartion_impl<2>(h1, h2, metric, algo, plan_ptr);
+      break;
+    case 3:
+      cost = dpartion_impl<3>(h1, h2, metric, algo, plan_ptr);
+      break;
+    case 4:
+      cost = dpartion_impl<4>(h1, h2, metric, algo, plan_ptr);
+      break;
+    default:
+      throw std::invalid_argument(
+          "dpartion supports 1-, 2-, 3-, or 4-dimensional histograms");
   }
 
   if (return_transport_plan) {
@@ -401,11 +502,45 @@ float or tuple(float, SparseTransportPlan)
     The 1-D squared Euclidean OT cost, or (cost, plan) if return_transport_plan is True.
 )doc");
 
+  py::enum_<emdgrid::McfLemonAlgorithm>(module, "McfLemonAlgorithm")
+      .value("NetworkSimplex", emdgrid::McfLemonAlgorithm::NetworkSimplex)
+      .value("CostScaling", emdgrid::McfLemonAlgorithm::CostScaling)
+      .export_values();
+
   py::enum_<emdgrid::GroundMetric>(module, "GroundMetric")
       .value("L1", emdgrid::GroundMetric::L1)
       .value("SqEuclidean", emdgrid::GroundMetric::SqEuclidean)
       .value("SquaredEuclidean", emdgrid::GroundMetric::SqEuclidean)
       .export_values();
+
+  module.def(
+      "dpartion", &dpartion_py,
+      py::arg("h1"), py::arg("h2"),
+      py::arg("metric") = "l1",
+      py::arg("algorithm") = "network_simplex",
+      py::arg("return_transport_plan") = false,
+      R"doc(
+Compute Optimal Transport on N-D grid histograms using (d+1)-partite graph MCF (Auricchio et al. 2018).
+
+Parameters
+----------
+h1 : numpy.ndarray, dtype=float64
+    First histogram (C-contiguous).
+h2 : numpy.ndarray, dtype=float64
+    Second histogram (C-contiguous, same shape as *h1*).
+metric : GroundMetric or str, optional
+    Ground metric choice: GroundMetric.L1 or "l1" (default) versus
+    GroundMetric.SqEuclidean or "sqeuclidean".
+algorithm : McfLemonAlgorithm or str, optional
+    Solver algorithm choice: "network_simplex" (default) or "cost_scaling".
+return_transport_plan : bool, optional
+    If True, return a tuple (cost, plan).
+
+Returns
+-------
+float or tuple(float, SparseTransportPlan)
+    The optimal transport cost, or (cost, plan) if return_transport_plan is True.
+)doc");
 
   module.def(
       "knothe_rosenblatt", &knothe_rosenblatt_py,

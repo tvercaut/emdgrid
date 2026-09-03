@@ -10,12 +10,9 @@
 
 #include "emdgrid/emd_1d.hpp"
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/utils.hpp"
 
 namespace emdgrid {
-
-/// Ground metric choice for 1-D marginal transport matching in
-/// Knothe-Rosenblatt transportation plan.
-enum class GroundMetric : std::uint8_t { L1, SqEuclidean };
 
 namespace detail {
 

@@ -492,6 +492,199 @@ TEST_CASE("mcf_lemon_l1 2D: unnormalized mass throws") {
                   std::invalid_argument);
 }
 
+// ============================================================================
+//  mcf_dpartion tests (Auricchio et al. 2018)
+// ============================================================================
+
+TEST_CASE("mcf_dpartion 1D/2D/3D: identical histograms give zero") {
+  const emdgrid::GridLayout<1> l1({5});
+  const std::vector<double> v1 = {0.1, 0.2, 0.4, 0.2, 0.1};
+  const emdgrid::GridDataView<1, double> h1(l1, std::span(v1));
+  CHECK(emdgrid::mcf_dpartion(h1, h1) == doctest::Approx(0.0));
+  CHECK(emdgrid::mcf_dpartion(h1, h1, emdgrid::GroundMetric::SqEuclidean) ==
+        doctest::Approx(0.0));
+
+  const emdgrid::GridLayout<2> l2({3, 3});
+  const std::vector<double> v2(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h2(l2, std::span(v2));
+  CHECK(emdgrid::mcf_dpartion(h2, h2) == doctest::Approx(0.0));
+  CHECK(emdgrid::mcf_dpartion(h2, h2, emdgrid::GroundMetric::SqEuclidean) ==
+        doctest::Approx(0.0));
+
+  const emdgrid::GridLayout<3> l3({2, 2, 2});
+  const std::vector<double> v3(8, 0.125);
+  const emdgrid::GridDataView<3, double> h3(l3, std::span(v3));
+  CHECK(emdgrid::mcf_dpartion(h3, h3) == doctest::Approx(0.0));
+  CHECK(emdgrid::mcf_dpartion(h3, h3, emdgrid::GroundMetric::SqEuclidean) ==
+        doctest::Approx(0.0));
+}
+
+TEST_CASE("mcf_dpartion L1: matches mcf_lemon_l1 and emd_l1 exactly") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1v = {1.0, 0.0, 0.0, 0.0};
+  const std::vector<double> h2v = {0.0, 0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  const auto ns_algo = emdgrid::McfLemonAlgorithm::NetworkSimplex;
+  const auto cs_algo = emdgrid::McfLemonAlgorithm::CostScaling;
+  const auto l1_metric = emdgrid::GroundMetric::L1;
+
+  const double d_dpart_ns = emdgrid::mcf_dpartion(h1, h2, l1_metric, ns_algo);
+  const double d_dpart_cs = emdgrid::mcf_dpartion(h1, h2, l1_metric, cs_algo);
+  const double d_lemon = emdgrid::mcf_lemon_l1(h1, h2);
+
+  CHECK(d_dpart_ns == doctest::Approx(2.0));
+  CHECK(d_dpart_cs == doctest::Approx(2.0));
+  CHECK(d_dpart_ns == doctest::Approx(d_lemon));
+}
+
+TEST_CASE("mcf_dpartion SqEuclidean: exact distance checks") {
+  // 1D shift by 2 bins: cost = (2 - 0)^2 = 4
+  const emdgrid::GridLayout<1> l1({3});
+  const std::vector<double> h1_1d = {1.0, 0.0, 0.0};
+  const std::vector<double> h2_1d = {0.0, 0.0, 1.0};
+  const emdgrid::GridDataView<1, double> v1_1d(l1, std::span(h1_1d));
+  const emdgrid::GridDataView<1, double> v2_1d(l1, std::span(h2_1d));
+  CHECK(emdgrid::mcf_dpartion(
+            v1_1d, v2_1d, emdgrid::GroundMetric::SqEuclidean) ==
+        doctest::Approx(4.0));
+
+  // 2D shift (0,0) -> (2,2): cost = (2-0)^2 + (2-0)^2 = 8
+  const emdgrid::GridLayout<2> l2({3, 3});
+  std::vector<double> h1_2d(9, 0.0);
+  std::vector<double> h2_2d(9, 0.0);
+  h1_2d[0] = 1.0;
+  h2_2d[8] = 1.0;
+  const emdgrid::GridDataView<2, double> v1_2d(l2, std::span(h1_2d));
+  const emdgrid::GridDataView<2, double> v2_2d(l2, std::span(h2_2d));
+  CHECK(emdgrid::mcf_dpartion(
+            v1_2d, v2_2d, emdgrid::GroundMetric::SqEuclidean) ==
+        doctest::Approx(8.0));
+
+  // 3D shift (0,0,0) -> (1,2,3): cost = 1^2 + 2^2 + 3^2 = 14
+  const emdgrid::GridLayout<3> l3({2, 3, 4});
+  std::vector<double> h1_3d(24, 0.0);
+  std::vector<double> h2_3d(24, 0.0);
+  h1_3d[l3.node({0, 0, 0})] = 1.0;
+  h2_3d[l3.node({1, 2, 3})] = 1.0;
+  const emdgrid::GridDataView<3, double> v1_3d(l3, std::span(h1_3d));
+  const emdgrid::GridDataView<3, double> v2_3d(l3, std::span(h2_3d));
+  CHECK(emdgrid::mcf_dpartion(
+            v1_3d, v2_3d, emdgrid::GroundMetric::SqEuclidean) ==
+        doctest::Approx(14.0));
+}
+
+TEST_CASE("mcf_dpartion 3D: matches emd_l1 on random histograms") {
+  constexpr std::size_t dim = 4;
+  const emdgrid::GridLayout<3> layout({dim, dim, dim});
+  const std::size_t n_bins = layout.node_count();
+
+  const std::vector<double> h1_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 42);
+  const std::vector<double> h2_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 1337);
+
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+  const auto ns_algo = emdgrid::McfLemonAlgorithm::NetworkSimplex;
+  const auto cs_algo = emdgrid::McfLemonAlgorithm::CostScaling;
+  const auto l1_metric = emdgrid::GroundMetric::L1;
+
+  const double dist_emd = emdgrid::emd_l1(h1, h2);
+  const double dist_dpart_ns =
+      emdgrid::mcf_dpartion(h1, h2, l1_metric, ns_algo);
+  const double dist_dpart_cs =
+      emdgrid::mcf_dpartion(h1, h2, l1_metric, cs_algo);
+
+  CHECK(dist_dpart_ns == doctest::Approx(dist_emd).epsilon(1e-4));
+  CHECK(dist_dpart_cs == doctest::Approx(dist_emd).epsilon(1e-4));
+}
+
+TEST_CASE("mcf_dpartion: custom cost functor") {
+  const emdgrid::GridLayout<2> layout({3, 3});
+  std::vector<double> h1v(9, 0.0);
+  std::vector<double> h2v(9, 0.0);
+  h1v[0] = 1.0;  // (0,0)
+  h2v[8] = 1.0;  // (2,2)
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
+
+  // Custom cost: 3 * |a - b|
+  auto custom_cost = [](std::size_t /*axis*/, std::size_t a, std::size_t b) {
+    const auto diff =
+        static_cast<std::ptrdiff_t>(a) - static_cast<std::ptrdiff_t>(b);
+    return 3 * std::abs(diff);
+  };
+
+  const double dist = emdgrid::mcf_dpartion(h1, h2, custom_cost);
+  // (2+2) * 3 = 12.0
+  CHECK(dist == doctest::Approx(12.0));
+}
+
+TEST_CASE("mcf_dpartion 2D: transport plan computation and reconstruction") {
+  const emdgrid::GridLayout<2> layout({2, 2});
+  const std::vector<double> h1_norm = {0.5, 0.0, 0.0, 0.5};
+  const std::vector<double> h2_norm = {0.0, 0.5, 0.5, 0.0};
+
+  const emdgrid::GridDataView<2, double> h1(layout, std::span(h1_norm));
+  const emdgrid::GridDataView<2, double> h2(layout, std::span(h2_norm));
+
+  for (auto metric :
+       {emdgrid::GroundMetric::L1, emdgrid::GroundMetric::SqEuclidean}) {
+    emdgrid::SparseTransportPlan plan;
+    double cost = emdgrid::mcf_dpartion(
+        h1, h2, metric, emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
+
+    REQUIRE(!plan.flow.empty());
+
+    double reconstructed_cost = 0.0;
+    double total_flow = 0.0;
+    bool all_positive = true;
+
+    for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+      uint32_t src = plan.source[k];
+      uint32_t tgt = plan.target[k];
+      double f = plan.flow[k];
+      if (f <= 0.0) {
+        all_positive = false;
+      }
+      total_flow += f;
+
+      auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
+      auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
+      double dx = static_cast<double>(std::abs(c_src[0] - c_tgt[0]));
+      double dy = static_cast<double>(std::abs(c_src[1] - c_tgt[1]));
+      double arc_dist = (metric == emdgrid::GroundMetric::L1)
+                            ? (dx + dy)
+                            : ((dx * dx) + (dy * dy));
+      reconstructed_cost += f * arc_dist;
+    }
+
+    CHECK(all_positive);
+    CHECK(total_flow == doctest::Approx(1.0));
+    CHECK(reconstructed_cost == doctest::Approx(cost));
+  }
+}
+
+TEST_CASE("mcf_dpartion: shape mismatch and unnormalized mass throw") {
+  const emdgrid::GridLayout<2> layout2({2, 2});
+  const emdgrid::GridLayout<2> layout3({3, 3});
+  const std::vector<double> v4(4, 0.25);
+  const std::vector<double> v9(9, 1.0 / 9);
+  const emdgrid::GridDataView<2, double> h4(layout2, std::span(v4));
+  const emdgrid::GridDataView<2, double> h9(layout3, std::span(v9));
+
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::mcf_dpartion(h4, h9)),
+                  std::invalid_argument);
+
+  const std::vector<double> v_unnorm(4, 0.50);
+  const emdgrid::GridDataView<2, double> h_unnorm(layout2, std::span(v_unnorm));
+  CHECK_THROWS_AS(static_cast<void>(emdgrid::mcf_dpartion(h4, h_unnorm)),
+                  std::invalid_argument);
+}
+
 TEST_CASE("emd_l1 3D: max_iter parameter exposure and convergence") {
   constexpr std::size_t dim = 16;
   const emdgrid::GridLayout<3> layout({dim, dim, dim});

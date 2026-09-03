@@ -5,12 +5,36 @@
 #include <cmath>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <numeric>
 #include <random>
 #include <span>
 #include <vector>
 
 namespace emdgrid {
+
+/// Ground metric choice for optimal transport problems.
+enum class GroundMetric : std::uint8_t { L1, SqEuclidean };
+
+/// Default cost functor for L1 (Manhattan) ground metric.
+struct L1Cost {
+  [[nodiscard]] int64_t operator()(std::size_t /*axis*/, std::size_t a,
+                                  std::size_t b) const noexcept {
+    const auto diff =
+        static_cast<std::ptrdiff_t>(a) - static_cast<std::ptrdiff_t>(b);
+    return std::abs(diff);
+  }
+};
+
+/// Default cost functor for SqEuclidean (squared Euclidean) ground metric.
+struct SqEuclideanCost {
+  [[nodiscard]] int64_t operator()(std::size_t /*axis*/, std::size_t a,
+                                  std::size_t b) const noexcept {
+    const auto diff =
+        static_cast<std::ptrdiff_t>(a) - static_cast<std::ptrdiff_t>(b);
+    return diff * diff;
+  }
+};
 
 /// Computes the softmax of a given sequence of numbers using an online,
 /// numerically safe streaming formulation.
