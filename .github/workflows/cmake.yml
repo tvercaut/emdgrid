@@ -54,8 +54,13 @@ jobs:
     - name: Conan Profile Detect
       run: conan profile detect --force
 
-    - name: Install dependencies with Conan
-      run: conan install . --build=missing -s build_type=Release -s:b compiler.cppstd=17 -s:h compiler.cppstd=17
+    - name: Install dependencies with Conan (non windows)
+      if: runner.os != 'Windows'
+      run: conan install . --build=missing -s build_type=Release
+
+    - name: Install dependencies with Conan (Windows)
+      if: runner.os == 'Windows'
+      run: conan install . --build=missing -s build_type=Release -s:b compiler.cppstd=20 -s:h compiler.cppstd=20
 
     - name: Configure CMake
       run: cmake --preset conan-release -DEMDGRID_BUILD_PYTHON_BINDINGS=${{ matrix.build_python_bindings }} -DUSE_ASAN=${{ matrix.use_asan }} .
