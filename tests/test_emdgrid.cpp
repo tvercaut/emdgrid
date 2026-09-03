@@ -428,7 +428,8 @@ TEST_CASE("mcf_lemon_l1 3D: matches emd_l1 and mcf_l1 on random histograms") {
   CHECK(dist_lemon_cs == doctest::Approx(dist_emd).epsilon(1e-4));
 }
 
-TEST_CASE("mcf_lemon_l1 2D: transport plan computation and cost reconstruction") {
+TEST_CASE(
+    "mcf_lemon_l1 2D: transport plan computation and cost reconstruction") {
   const emdgrid::GridLayout<2> layout({2, 2});
   const std::vector<double> h1_norm = {0.5, 0.0, 0.0, 0.5};
   const std::vector<double> h2_norm = {0.0, 0.5, 0.5, 0.0};

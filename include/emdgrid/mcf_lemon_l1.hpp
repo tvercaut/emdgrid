@@ -13,9 +13,17 @@
 #include <utility>
 #include <vector>
 
+#pragma push_macro("MAX")
+#pragma push_macro("MIN")
+#undef MAX
+#undef MIN
+
 #include <lemon/cost_scaling.h>     // NOLINT(build/include_order)
 #include <lemon/network_simplex.h>  // NOLINT(build/include_order)
 #include <lemon/smart_graph.h>      // NOLINT(build/include_order)
+
+#pragma pop_macro("MIN")
+#pragma pop_macro("MAX")
 
 #include "emdgrid/emdgrid.hpp"
 
