@@ -160,25 +160,37 @@ int main(int argc, char** argv) {
   }
 
   if (run_dpartion) {
-    emdgrid::GroundMetric metric = emdgrid::GroundMetric::L1;
-    if (kr_metric_str == "sqeuclidean" ||
-        kr_metric_str == "squared_euclidean") {
-      metric = emdgrid::GroundMetric::SqEuclidean;
-    }
-
-    emdgrid::SparseTransportPlan plan;
-    const emdgrid::Timer timer;
-    const double dist = emdgrid::mcf_dpartion(
-        h1, h2, metric, emdgrid::McfLemonAlgorithm::NetworkSimplex,
-        compute_plan ? &plan : nullptr);
-    const double elapsed_ms = timer.elapsed_milliseconds();
-
     std::cout << "\n--- dpartion MCF (Auricchio et al. 2018) ---\n";
-    std::cout << "Distance: " << dist << '\n';
-    std::cout << "Computation time: " << elapsed_ms << " ms\n";
-    if (compute_plan) {
-      std::cout << "Transport plan flow entries: " << plan.source.size()
-                << '\n';
+
+    const struct Variant {
+      const char* name;
+      emdgrid::GroundMetric metric;
+      emdgrid::McfLemonAlgorithm algo;
+    } variants[] = {
+        {"NetworkSimplex + L1", emdgrid::GroundMetric::L1,
+         emdgrid::McfLemonAlgorithm::NetworkSimplex},
+        {"NetworkSimplex + SqEuclidean", emdgrid::GroundMetric::SqEuclidean,
+         emdgrid::McfLemonAlgorithm::NetworkSimplex},
+        {"CostScaling + L1", emdgrid::GroundMetric::L1,
+         emdgrid::McfLemonAlgorithm::CostScaling},
+        {"CostScaling + SqEuclidean", emdgrid::GroundMetric::SqEuclidean,
+         emdgrid::McfLemonAlgorithm::CostScaling},
+    };
+
+    for (const auto& [name, metric, algo] : variants) {
+      emdgrid::SparseTransportPlan plan;
+      const emdgrid::Timer timer;
+      const double dist = emdgrid::mcf_dpartion(
+          h1, h2, metric, algo, compute_plan ? &plan : nullptr);
+      const double elapsed_ms = timer.elapsed_milliseconds();
+
+      std::cout << "Variant [" << name << "]:\n";
+      std::cout << "  Distance: " << dist << '\n';
+      std::cout << "  Computation time: " << elapsed_ms << " ms\n";
+      if (compute_plan) {
+        std::cout << "  Transport plan flow entries: " << plan.source.size()
+                  << '\n';
+      }
     }
   }
 

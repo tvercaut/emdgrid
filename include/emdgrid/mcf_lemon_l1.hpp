@@ -25,6 +25,8 @@
 #pragma pop_macro("MIN")
 #pragma pop_macro("MAX")
 
+#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
+
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/utils.hpp"
 
@@ -336,6 +338,14 @@ template <std::size_t Dim, std::floating_point Scalar,
     throw std::invalid_argument("expected unit-mass histograms");
   }
 
+  const char* algo_str =
+      (algo == McfLemonAlgorithm::NetworkSimplex) ? "NetworkSimplex"
+                                                   : "CostScaling";
+  spdlog::info("Starting dpartion solver (Dim={}, algo={})...", Dim, algo_str);
+
+  const Timer total_timer;
+  Timer phase_timer;
+
   const std::size_t total_nodes = (Dim + 1) * n_nodes;
   const std::size_t layer_dim_offset = Dim * n_nodes;
 
@@ -381,6 +391,10 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
   const int64_t cap_val = std::max<int64_t>(total_pos_supply, 1);
+
+  spdlog::info("dpartion supply setup took {:.3f} ms",
+               phase_timer.elapsed_milliseconds());
+  phase_timer.reset();
 
   using Graph = lemon::SmartDigraph;
   using Node = Graph::Node;
@@ -443,6 +457,10 @@ template <std::size_t Dim, std::floating_point Scalar,
     supply_map[nodes[i]] = supply[i];
   }
 
+  spdlog::info("dpartion graph construction took {:.3f} ms (nodes={}, arcs={})",
+               phase_timer.elapsed_milliseconds(), total_nodes, expected_arcs);
+  phase_timer.reset();
+
   int64_t raw_optimal_cost = 0;
   std::vector<std::vector<detail::FlowEdge>> flow_adj(total_nodes);
   auto* flow_adj_ptr = plan ? &flow_adj : nullptr;
@@ -460,7 +478,11 @@ template <std::size_t Dim, std::floating_point Scalar,
   const CompScalar total_cost = static_cast<CompScalar>(raw_optimal_cost) /
                                 static_cast<CompScalar>(scale);
 
+  spdlog::info("dpartion LEMON solve took {:.3f} ms",
+               phase_timer.elapsed_milliseconds());
+
   if (plan) {
+    phase_timer.reset();
     plan->source.clear();
     plan->target.clear();
     plan->flow.clear();
@@ -518,7 +540,12 @@ template <std::size_t Dim, std::floating_point Scalar,
         plan->flow.push_back(static_cast<double>(bottleneck) / scale);
       }
     }
+    spdlog::info("dpartion plan extraction took {:.3f} ms",
+                 phase_timer.elapsed_milliseconds());
   }
+
+  spdlog::info("dpartion total execution took {:.3f} ms",
+               total_timer.elapsed_milliseconds());
 
   return total_cost;
 }
