@@ -29,6 +29,42 @@
 
 namespace emdgrid {
 
+namespace detail {
+
+/// Edge with target node and positive flow value.
+struct FlowEdge {
+  uint32_t head;
+  int64_t flow;
+};
+
+/// Shared helper to solve LEMON Min-Cost Flow and collect flow edges.
+template <typename Solver, typename Graph>
+int64_t run_lemon_mcf(
+    Graph& graph,
+    typename Graph::template ArcMap<int64_t>& capacity,
+    typename Graph::template ArcMap<int64_t>& cost,
+    typename Graph::template NodeMap<int64_t>& supply,
+    std::vector<std::vector<FlowEdge>>* flow_adj = nullptr) {
+  Solver mcf(graph);
+  mcf.upperMap(capacity).costMap(cost).supplyMap(supply);
+  if (mcf.run() != Solver::OPTIMAL) {
+    throw std::runtime_error("min-cost flow solve failed");
+  }
+  if (flow_adj) {
+    for (typename Graph::ArcIt a(graph); a != lemon::INVALID; ++a) {
+      const int64_t f = mcf.flow(a);
+      if (f > 0) {
+        const auto u = static_cast<std::size_t>(Graph::id(graph.source(a)));
+        const auto v = static_cast<uint32_t>(Graph::id(graph.target(a)));
+        (*flow_adj)[u].push_back({v, f});
+      }
+    }
+  }
+  return mcf.totalCost();
+}
+
+}  // namespace detail
+
 /// Algorithm variant for LEMON Min-Cost Flow solver.
 enum class McfLemonAlgorithm : std::uint8_t { NetworkSimplex, CostScaling };
 
@@ -158,51 +194,17 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
 
   int64_t raw_optimal_cost = 0;
-
-  struct FlowEdge {
-    uint32_t head;
-    int64_t flow;
-  };
-  std::vector<std::vector<FlowEdge>> flow_adj(n_nodes);
+  std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
+  auto* flow_adj_ptr = plan ? &flow_adj : nullptr;
 
   if (algo == McfLemonAlgorithm::NetworkSimplex) {
-    lemon::NetworkSimplex<Graph, int64_t, int64_t> mcf(graph);
-    mcf.upperMap(capacity).costMap(cost).supplyMap(supply_map);
-    const auto status = mcf.run();
-    if (status != decltype(mcf)::OPTIMAL) {
-      throw std::runtime_error("min-cost flow solve failed (NetworkSimplex)");
-    }
-    raw_optimal_cost = mcf.totalCost();
-
-    if (plan) {
-      for (Graph::ArcIt a(graph); a != lemon::INVALID; ++a) {
-        const int64_t f = mcf.flow(a);
-        if (f > 0) {
-          const auto u = static_cast<std::size_t>(Graph::id(graph.source(a)));
-          const auto v = static_cast<uint32_t>(Graph::id(graph.target(a)));
-          flow_adj[u].push_back({v, f});
-        }
-      }
-    }
+    using Solver = lemon::NetworkSimplex<Graph, int64_t, int64_t>;
+    raw_optimal_cost = detail::run_lemon_mcf<Solver>(
+        graph, capacity, cost, supply_map, flow_adj_ptr);
   } else {
-    lemon::CostScaling<Graph, int64_t, int64_t> mcf(graph);
-    mcf.upperMap(capacity).costMap(cost).supplyMap(supply_map);
-    const auto status = mcf.run();
-    if (status != decltype(mcf)::OPTIMAL) {
-      throw std::runtime_error("min-cost flow solve failed (CostScaling)");
-    }
-    raw_optimal_cost = mcf.totalCost();
-
-    if (plan) {
-      for (Graph::ArcIt a(graph); a != lemon::INVALID; ++a) {
-        const int64_t f = mcf.flow(a);
-        if (f > 0) {
-          const auto u = static_cast<std::size_t>(Graph::id(graph.source(a)));
-          const auto v = static_cast<uint32_t>(Graph::id(graph.target(a)));
-          flow_adj[u].push_back({v, f});
-        }
-      }
-    }
+    using Solver = lemon::CostScaling<Graph, int64_t, int64_t>;
+    raw_optimal_cost = detail::run_lemon_mcf<Solver>(
+        graph, capacity, cost, supply_map, flow_adj_ptr);
   }
 
   const CompScalar total_cost = static_cast<CompScalar>(raw_optimal_cost) /
