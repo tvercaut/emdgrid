@@ -12,9 +12,7 @@ import zipfile
 from pathlib import Path
 
 RELEASE_TAG = "v9.15"
-API_URL = (
-    f"https://api.github.com/repos/google/or-tools/releases/tags/{RELEASE_TAG}"
-)
+API_URL = f"https://api.github.com/repos/google/or-tools/releases/tags/{RELEASE_TAG}"
 
 
 def parse_args():
