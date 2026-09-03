@@ -526,10 +526,12 @@ TEST_CASE("mcf_dpartition L1: matches mcf_lemon_l1 and emd_l1 exactly") {
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
 
-  const double d_dpart_ns = emdgrid::mcf_dpartition(
-      h1, h2, emdgrid::GroundMetric::L1, emdgrid::McfLemonAlgorithm::NetworkSimplex);
-  const double d_dpart_cs = emdgrid::mcf_dpartition(
-      h1, h2, emdgrid::GroundMetric::L1, emdgrid::McfLemonAlgorithm::CostScaling);
+  const auto ns_algo = emdgrid::McfLemonAlgorithm::NetworkSimplex;
+  const auto cs_algo = emdgrid::McfLemonAlgorithm::CostScaling;
+  const auto l1_metric = emdgrid::GroundMetric::L1;
+
+  const double d_dpart_ns = emdgrid::mcf_dpartition(h1, h2, l1_metric, ns_algo);
+  const double d_dpart_cs = emdgrid::mcf_dpartition(h1, h2, l1_metric, cs_algo);
   const double d_lemon = emdgrid::mcf_lemon_l1(h1, h2);
 
   CHECK(d_dpart_ns == doctest::Approx(2.0));
@@ -586,11 +588,15 @@ TEST_CASE("mcf_dpartition 3D: matches emd_l1 on random histograms") {
   const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
   const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
 
+  const auto ns_algo = emdgrid::McfLemonAlgorithm::NetworkSimplex;
+  const auto cs_algo = emdgrid::McfLemonAlgorithm::CostScaling;
+  const auto l1_metric = emdgrid::GroundMetric::L1;
+
   const double dist_emd = emdgrid::emd_l1(h1, h2);
-  const double dist_dpart_ns = emdgrid::mcf_dpartition(
-      h1, h2, emdgrid::GroundMetric::L1, emdgrid::McfLemonAlgorithm::NetworkSimplex);
-  const double dist_dpart_cs = emdgrid::mcf_dpartition(
-      h1, h2, emdgrid::GroundMetric::L1, emdgrid::McfLemonAlgorithm::CostScaling);
+  const double dist_dpart_ns =
+      emdgrid::mcf_dpartition(h1, h2, l1_metric, ns_algo);
+  const double dist_dpart_cs =
+      emdgrid::mcf_dpartition(h1, h2, l1_metric, cs_algo);
 
   CHECK(dist_dpart_ns == doctest::Approx(dist_emd).epsilon(1e-4));
   CHECK(dist_dpart_cs == doctest::Approx(dist_emd).epsilon(1e-4));
@@ -607,7 +613,8 @@ TEST_CASE("mcf_dpartition: custom cost functor") {
 
   // Custom cost: 3 * |a - b|
   auto custom_cost = [](std::size_t /*axis*/, std::size_t a, std::size_t b) {
-    const auto diff = static_cast<std::ptrdiff_t>(a) - static_cast<std::ptrdiff_t>(b);
+    const auto diff =
+        static_cast<std::ptrdiff_t>(a) - static_cast<std::ptrdiff_t>(b);
     return 3 * std::abs(diff);
   };
 
@@ -616,7 +623,7 @@ TEST_CASE("mcf_dpartition: custom cost functor") {
   CHECK(dist == doctest::Approx(12.0));
 }
 
-TEST_CASE("mcf_dpartition 2D: transport plan computation and cost reconstruction") {
+TEST_CASE("mcf_dpartition 2D: transport plan computation and reconstruction") {
   const emdgrid::GridLayout<2> layout({2, 2});
   const std::vector<double> h1_norm = {0.5, 0.0, 0.0, 0.5};
   const std::vector<double> h2_norm = {0.0, 0.5, 0.5, 0.0};
@@ -624,7 +631,8 @@ TEST_CASE("mcf_dpartition 2D: transport plan computation and cost reconstruction
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1_norm));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2_norm));
 
-  for (auto metric : {emdgrid::GroundMetric::L1, emdgrid::GroundMetric::SqEuclidean}) {
+  for (auto metric :
+       {emdgrid::GroundMetric::L1, emdgrid::GroundMetric::SqEuclidean}) {
     emdgrid::SparseTransportPlan plan;
     double cost = emdgrid::mcf_dpartition(
         h1, h2, metric, emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
@@ -648,8 +656,9 @@ TEST_CASE("mcf_dpartition 2D: transport plan computation and cost reconstruction
       auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
       double dx = static_cast<double>(std::abs(c_src[0] - c_tgt[0]));
       double dy = static_cast<double>(std::abs(c_src[1] - c_tgt[1]));
-      double arc_dist = (metric == emdgrid::GroundMetric::L1) ? (dx + dy)
-                                                               : (dx * dx + dy * dy);
+      double arc_dist = (metric == emdgrid::GroundMetric::L1)
+                            ? (dx + dy)
+                            : (dx * dx + dy * dy);
       reconstructed_cost += f * arc_dist;
     }
 
