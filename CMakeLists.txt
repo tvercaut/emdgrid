@@ -78,7 +78,12 @@ if(NOT TARGET ortools::ortools)
 endif()
 
 if(TARGET ortools)
-  set_target_properties(ortools PROPERTIES CXX_CLANG_TIDY "")
+  set_target_properties(ortools PROPERTIES SYSTEM TRUE CXX_CLANG_TIDY "")
+elseif(TARGET ortools::ortools)
+  get_target_property(is_alias ortools::ortools ALIASED_TARGET)
+  if(NOT is_alias)
+    set_target_properties(ortools::ortools PROPERTIES SYSTEM TRUE CXX_CLANG_TIDY "")
+  endif()
 endif()
 
 find_program(CLANG_TIDY_EXE NAMES clang-tidy)
