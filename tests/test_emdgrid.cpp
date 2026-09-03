@@ -972,6 +972,46 @@ TEST_CASE(
   CHECK(reconstructed_cost == doctest::Approx(approx_cost));
 }
 
+TEST_CASE(
+    "greedy_emd_l1_approx 3D: reported cost matches transport plan cost") {
+  constexpr std::size_t dim = 10;
+  const emdgrid::GridLayout<3> layout({dim, dim, dim});
+  const std::size_t n_bins = layout.node_count();
+
+  const std::vector<double> h1_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 42);
+  const std::vector<double> h2_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 1337);
+
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+  emdgrid::SparseTransportPlan plan;
+  double approx_cost = emdgrid::greedy_emd_l1_approx(h1, h2, &plan);
+
+  REQUIRE(!plan.flow.empty());
+
+  double reconstructed_cost = 0.0;
+  double total_flow = 0.0;
+  for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+    uint32_t src = plan.source[k];
+    uint32_t tgt = plan.target[k];
+    double f = plan.flow[k];
+    total_flow += f;
+
+    auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src));
+    auto c_tgt = layout.coordinates(static_cast<std::ptrdiff_t>(tgt));
+    double l1_dist = static_cast<double>(
+        std::abs(c_src[0] - c_tgt[0]) +
+        std::abs(c_src[1] - c_tgt[1]) +
+        std::abs(c_src[2] - c_tgt[2]));
+    reconstructed_cost += f * l1_dist;
+  }
+
+  CHECK(total_flow == doctest::Approx(1.0));
+  CHECK(approx_cost == doctest::Approx(reconstructed_cost));
+}
+
 TEST_CASE("greedy_emd_l1_approx 2D: shape mismatch throws") {
   const emdgrid::GridLayout<2> layout2({2, 2});
   const emdgrid::GridLayout<2> layout3({3, 3});
