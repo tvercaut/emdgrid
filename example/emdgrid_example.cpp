@@ -75,8 +75,8 @@ void run_diagnostics(
     std::cout << "    Cost difference (|reported - dot product|): "
               << std::abs(reported_cost - dot_product_cost) << '\n';
   } else {
-    std::cout << "    Recomputed cost (dot product with C): " << dot_product_cost
-              << '\n';
+    std::cout << "    Recomputed cost (dot product with C): "
+              << dot_product_cost << '\n';
   }
   std::cout << "    Plan total sum: " << plan_total_sum
             << " (valid = "

@@ -972,7 +972,8 @@ TEST_CASE(
   CHECK(reconstructed_cost == doctest::Approx(approx_cost));
 }
 
-TEST_CASE("greedy_emd_l1_approx 3D: reported cost matches recomputed transport plan cost") {
+TEST_CASE(
+    "greedy_emd_l1_approx 3D: reported cost matches transport plan cost") {
   constexpr std::size_t dim = 10;
   const emdgrid::GridLayout<3> layout({dim, dim, dim});
   const std::size_t n_bins = layout.node_count();
