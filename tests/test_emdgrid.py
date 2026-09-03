@@ -291,6 +291,69 @@ class TestKnotheRosenblattBinding:
             pyemdgrid.knothe_rosenblatt(h1, h2)
 
 
+class TestDpartitionBinding:
+    """Basic correctness tests for pyemdgrid.dpartition."""
+
+    def test_1d_identical_histograms_zero(self):
+        h = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+        assert pyemdgrid.dpartition(h, h, metric="l1") == pytest.approx(0.0)
+        assert pyemdgrid.dpartition(
+            h, h, metric=pyemdgrid.GroundMetric.SqEuclidean
+        ) == pytest.approx(0.0)
+
+    def test_2d_shift_and_metrics(self):
+        h1 = np.zeros((3, 3))
+        h2 = np.zeros((3, 3))
+        h1[0, 0] = 1.0
+        h2[2, 2] = 1.0
+
+        c_l1 = pyemdgrid.dpartition(h1, h2, metric="l1")
+        c_sq = pyemdgrid.dpartition(h1, h2, metric="sqeuclidean")
+
+        assert c_l1 == pytest.approx(4.0)
+        assert c_sq == pytest.approx(8.0)
+
+    def test_algorithms_network_simplex_and_cost_scaling(self):
+        h1 = np.array([[0.5, 0.5], [0.0, 0.0]])
+        h2 = np.array([[0.0, 0.0], [0.5, 0.5]])
+
+        c_ns = pyemdgrid.dpartition(h1, h2, algorithm="network_simplex")
+        c_cs = pyemdgrid.dpartition(h1, h2, algorithm="cost_scaling")
+        c_enum = pyemdgrid.dpartition(
+            h1, h2, algorithm=pyemdgrid.McfLemonAlgorithm.CostScaling
+        )
+
+        assert c_ns == pytest.approx(1.0)
+        assert c_cs == pytest.approx(1.0)
+        assert c_enum == pytest.approx(1.0)
+
+    def test_3d_diagonal_shift(self):
+        h1 = np.zeros((2, 2, 2))
+        h2 = np.zeros((2, 2, 2))
+        h1[0, 0, 0] = 1.0
+        h2[1, 1, 1] = 1.0
+
+        assert pyemdgrid.dpartition(h1, h2, metric="l1") == pytest.approx(3.0)
+        assert pyemdgrid.dpartition(h1, h2, metric="sqeuclidean") == pytest.approx(
+            3.0
+        )
+
+    def test_return_transport_plan_option(self):
+        h1 = np.array([[0.5, 0.0], [0.0, 0.5]])
+        h2 = np.array([[0.0, 0.5], [0.5, 0.0]])
+        cost, plan = pyemdgrid.dpartition(h1, h2, metric="sqeuclidean", return_transport_plan=True)
+        assert cost == pytest.approx(1.0)
+        assert scipy.sparse.issparse(plan)
+        assert plan.shape == (4, 4)
+        assert plan.sum() == pytest.approx(1.0)
+
+    def test_shape_mismatch_raises(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 0.0, 1.0])
+        with pytest.raises((ValueError, RuntimeError)):
+            pyemdgrid.dpartition(h1, h2)
+
+
 class TestGreedyEmdL1ApproxBinding:
     """Basic correctness tests exercised via the Python binding for greedy_emd_l1_approx."""
 
@@ -420,6 +483,58 @@ class TestEmdL1VsPot:
         assert cost == pytest.approx(cost_pot)
         assert plan.nnz == pot_G.nnz
         assert np.allclose(our_G_dense, pot_G_dense, atol=1e-5, rtol=1e-5)
+
+
+class TestDpartitionVsPot:
+    """Compare pyemdgrid.dpartition against POT's ot.emd2 for 2D/3D grids."""
+
+    @pytest.fixture()
+    def rng(self):
+        return np.random.default_rng(42)
+
+    def _make_histograms(self, rng, shape):
+        raw1 = rng.standard_normal(shape)
+        raw2 = rng.standard_normal(shape)
+        h1 = scipy.special.softmax(raw1.ravel()).reshape(shape)
+        h2 = scipy.special.softmax(raw2.ravel()).reshape(shape)
+        return h1, h2
+
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            (3, 4),
+            (4, 5),
+            (2, 3, 4),
+            (3, 4, 3),
+        ],
+    )
+    def test_l1_agrees_with_pot(self, rng, shape):
+        h1, h2 = self._make_histograms(rng, shape)
+        cost_dpart = pyemdgrid.dpartition(h1, h2, metric="l1")
+        cost_pot = _emd_l1_via_pot(h1, h2)
+        assert cost_dpart == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
+
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            (3, 4),
+            (4, 5),
+            (2, 3, 4),
+        ],
+    )
+    def test_sqeuclidean_agrees_with_pot(self, rng, shape):
+        h1, h2 = self._make_histograms(rng, shape)
+        cost_dpart = pyemdgrid.dpartition(h1, h2, metric="sqeuclidean")
+
+        # Build explicit squared Euclidean cost matrix M
+        ndim = len(shape)
+        axes = [np.arange(s) for s in shape]
+        coords = np.array(np.meshgrid(*axes, indexing="ij")).reshape(ndim, -1).T
+        diffs = coords[:, None, :] - coords[None, :, :]
+        M = np.sum(diffs**2, axis=-1).astype(np.float64)
+
+        cost_pot = ot.emd2(h1.ravel(), h2.ravel(), M)
+        assert cost_dpart == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
 
 
 class TestEmdSqeuclidean1dVsPot:
