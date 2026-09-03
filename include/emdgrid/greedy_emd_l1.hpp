@@ -55,17 +55,29 @@ template <std::size_t Dim, std::floating_point Scalar,
   detail::LingOkadaSolver solver(n_nodes, n_edges);
   detail::greedy_init<Dim, Scalar, CompScalar>(h1, h2, solver);
 
-  const double cost = solver.total_flow();
+  SparseTransportPlan local_plan;
+  SparseTransportPlan* target_plan = plan ? plan : &local_plan;
 
-  if (plan) {
-    std::vector<double> h1_d(n_nodes);
-    std::vector<double> h2_d(n_nodes);
-    for (std::size_t i = 0; i < n_nodes; ++i) {
-      h1_d[i] = static_cast<double>(h1.data()[i]);
-      h2_d[i] = static_cast<double>(h2.data()[i]);
+  std::vector<double> h1_d(n_nodes);
+  std::vector<double> h2_d(n_nodes);
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    h1_d[i] = static_cast<double>(h1.data()[i]);
+    h2_d[i] = static_cast<double>(h2.data()[i]);
+  }
+  detail::extract_transport_plan(n_nodes, h1_d, h2_d,
+                                 solver.get_directed_edge_flows(), target_plan);
+
+  double cost = 0.0;
+  for (std::size_t k = 0; k < target_plan->flow.size(); ++k) {
+    const auto c_src =
+        layout.coordinates(static_cast<std::ptrdiff_t>(target_plan->source[k]));
+    const auto c_tgt =
+        layout.coordinates(static_cast<std::ptrdiff_t>(target_plan->target[k]));
+    double l1_dist = 0.0;
+    for (std::size_t a = 0; a < Dim; ++a) {
+      l1_dist += static_cast<double>(std::abs(c_src[a] - c_tgt[a]));
     }
-    detail::extract_transport_plan(n_nodes, h1_d, h2_d,
-                                   solver.get_directed_edge_flows(), plan);
+    cost += target_plan->flow[k] * l1_dist;
   }
 
   return static_cast<CompScalar>(cost);

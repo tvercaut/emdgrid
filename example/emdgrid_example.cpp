@@ -24,7 +24,8 @@ void run_diagnostics(
     const emdgrid::GridDataView<Dim, double>& h1,
     const emdgrid::GridDataView<Dim, double>& h2,
     const emdgrid::SparseTransportPlan& plan,
-    emdgrid::GroundMetric metric = emdgrid::GroundMetric::L1) {
+    emdgrid::GroundMetric metric = emdgrid::GroundMetric::L1,
+    double reported_cost = -1.0) {
   const std::size_t n_nodes = layout.node_count();
   std::vector<double> src_marginal(n_nodes, 0.0);
   std::vector<double> tgt_marginal(n_nodes, 0.0);
@@ -70,8 +71,13 @@ void run_diagnostics(
   }
 
   std::cout << "  [Diagnostics]\n";
-  std::cout << "    Recomputed cost (dot product with C): " << dot_product_cost
-            << '\n';
+  if (reported_cost >= 0.0) {
+    std::cout << "    Cost difference (|reported - dot product|): "
+              << std::abs(reported_cost - dot_product_cost) << '\n';
+  } else {
+    std::cout << "    Recomputed cost (dot product with C): " << dot_product_cost
+              << '\n';
+  }
   std::cout << "    Plan total sum: " << plan_total_sum
             << " (valid = "
             << (std::abs(plan_total_sum - 1.0) < 1e-5 ? "yes" : "NO") << ")\n";
@@ -176,7 +182,7 @@ int main(int argc, char** argv) {
       std::cout << "Transport plan flow entries: " << plan.source.size()
                 << '\n';
       if (diagnostics) {
-        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1);
+        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
       }
     }
   }
@@ -195,7 +201,7 @@ int main(int argc, char** argv) {
       std::cout << "Transport plan flow entries: " << plan.source.size()
                 << '\n';
       if (diagnostics) {
-        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1);
+        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
       }
     }
   }
@@ -215,7 +221,7 @@ int main(int argc, char** argv) {
       std::cout << "Transport plan flow entries: " << plan.source.size()
                 << '\n';
       if (diagnostics) {
-        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1);
+        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
       }
     }
   }
@@ -235,7 +241,7 @@ int main(int argc, char** argv) {
       std::cout << "Transport plan flow entries: " << plan.source.size()
                 << '\n';
       if (diagnostics) {
-        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1);
+        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
       }
     }
   }
@@ -272,7 +278,7 @@ int main(int argc, char** argv) {
         std::cout << "  Transport plan flow entries: " << plan.source.size()
                   << '\n';
         if (diagnostics) {
-          run_diagnostics(layout, h1, h2, plan, metric);
+          run_diagnostics(layout, h1, h2, plan, metric, dist);
         }
       }
     }
@@ -292,7 +298,7 @@ int main(int argc, char** argv) {
       std::cout << "Transport plan flow entries: " << plan.source.size()
                 << '\n';
       if (diagnostics) {
-        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1);
+        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
       }
     }
   }
@@ -319,7 +325,7 @@ int main(int argc, char** argv) {
       std::cout << "Transport plan flow entries: " << plan.source.size()
                 << '\n';
       if (diagnostics) {
-        run_diagnostics(layout, h1, h2, plan, metric);
+        run_diagnostics(layout, h1, h2, plan, metric, dist);
       }
     }
   }
