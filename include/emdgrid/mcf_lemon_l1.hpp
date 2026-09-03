@@ -50,9 +50,7 @@ concept HasExtractSelfMassMember = requires {
 template <typename T>
 constexpr bool should_extract_self_mass_v = []() {
   using CleanT = std::decay_t<T>;
-  if constexpr (std::is_same_v<CleanT, L1Cost>) {
-    return true;
-  } else if constexpr (HasExtractSelfMassMember<CleanT>) {
+  if constexpr (HasExtractSelfMassMember<CleanT>) {
     return CleanT::extract_self_mass;
   } else {
     return false;
