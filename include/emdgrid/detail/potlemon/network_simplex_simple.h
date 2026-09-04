@@ -153,6 +153,9 @@ template <typename GR, typename V = int64_t, typename C = V,
           typename NodesType = uint16_t, typename ArcsType = int64_t>
 class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
  public:
+  typedef V Value;
+  typedef C Cost;
+
   enum class CostMode : std::uint8_t { StoredArray, DenseMatrix, LazyGeometry };
 
   enum class CostStorageMode : std::uint8_t {
@@ -181,9 +184,6 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           state_storage_mode(StateStorageMode::Dense) {}
   };
 
-  typedef V Value;
-  typedef C Cost;
-
   enum ProblemType : std::uint8_t {
     INFEASIBLE,
     OPTIMAL,
@@ -192,52 +192,6 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   };
 
   enum SupplyType : std::uint8_t { GEQ, LEQ };
-
-  const Value INF;
-
-  ArcsType _init_nb_arcs;
-
-  IntVector _source;
-  IntVector _target;
-  IntVector _artificial_source;
-  IntVector _artificial_target;
-
-  CostVector _cost;
-  ValueVector _supply;
-  ValueVector _flow;
-  ValueVector _artificial_flow;
-  CostVector _pi;
-
-  IntVector _parent;
-  ArcVector _pred;
-  IntVector _thread;
-  IntVector _rev_thread;
-  IntVector _succ_num;
-  IntVector _last_succ;
-  IntVector _dirty_revs;
-  BoolVector _forward;
-  StateVector _state;
-  PackedStateVector _packed_state;
-  HashMap<ArcsType, Value> _real_flow;
-
-  int _node_num;
-  int _n1;
-  int _n2;
-  SupplyType _stype;
-  CostMode _cost_mode;
-  CostStorageMode _cost_storage_mode;
-  FlowStorageMode _flow_storage_mode;
-  EndpointStorageMode _endpoint_storage_mode;
-  StateStorageMode _state_storage_mode;
-  int _dim;
-  int _metric;
-  int D_n2;
-  int _init_nb_nodes;
-
-  bool _has_max_cost;
-  bool _arc_mixing;
-  bool _warmstart_provided;
-  bool _warmstart_tree_built;
 
  private:
   POTLEMON_TEMPLATE_DIGRAPH_TYPEDEFS(GR)
@@ -309,6 +263,54 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
   typedef std::vector<signed char> StateVector;
 
+ public:
+  const Value INF;
+
+  ArcsType _init_nb_arcs;
+
+  IntVector _source;
+  IntVector _target;
+  IntVector _artificial_source;
+  IntVector _artificial_target;
+
+  CostVector _cost;
+  ValueVector _supply;
+  ValueVector _flow;
+  ValueVector _artificial_flow;
+  CostVector _pi;
+
+  IntVector _parent;
+  ArcVector _pred;
+  IntVector _thread;
+  IntVector _rev_thread;
+  IntVector _succ_num;
+  IntVector _last_succ;
+  IntVector _dirty_revs;
+  BoolVector _forward;
+  StateVector _state;
+  PackedStateVector _packed_state;
+  HashMap<ArcsType, Value> _real_flow;
+
+  int _node_num;
+  int _n1;
+  int _n2;
+  SupplyType _stype;
+  CostMode _cost_mode;
+  CostStorageMode _cost_storage_mode;
+  FlowStorageMode _flow_storage_mode;
+  EndpointStorageMode _endpoint_storage_mode;
+  StateStorageMode _state_storage_mode;
+  int _dim;
+  int _metric;
+  int D_n2;
+  int _init_nb_nodes;
+
+  bool _has_max_cost;
+  bool _arc_mixing;
+  bool _warmstart_provided;
+  bool _warmstart_tree_built;
+
+ private:
   // Ordered fields to minimize alignment padding
   uint64_t max_iter;
   const GR& _graph;
@@ -344,7 +346,28 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
  public:
   NetworkSimplexSimple(const GR& graph, SimplexOptions options, int nbnodes,
                        ArcsType nb_arcs, uint64_t maxiters)
-      : max_iter(maxiters),
+      : INF(std::numeric_limits<Value>::has_infinity
+                ? std::numeric_limits<Value>::infinity()
+                : std::numeric_limits<Value>::max()),
+        _init_nb_arcs(nb_arcs),
+        _node_num(0),
+        _n1(0),
+        _n2(0),
+        _stype(SupplyType::GEQ),
+        _cost_mode(CostMode::StoredArray),
+        _cost_storage_mode(options.cost_storage_mode),
+        _flow_storage_mode(options.flow_storage_mode),
+        _endpoint_storage_mode(options.endpoint_storage_mode),
+        _state_storage_mode(options.state_storage_mode),
+        _dim(0),
+        _metric(0),
+        D_n2(0),
+        _init_nb_nodes(nbnodes),
+        _has_max_cost(false),
+        _arc_mixing(options.arc_mixing),
+        _warmstart_provided(false),
+        _warmstart_tree_built(false),
+        max_iter(maxiters),
         _graph(graph),
         _arc_num(0),
         _all_arc_num(0),
@@ -371,30 +394,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         delta(0),
         MAX(std::numeric_limits<Value>::max()),
         mixingCoeff(0),
-        INF(std::numeric_limits<Value>::has_infinity
-                ? std::numeric_limits<Value>::infinity()
-                : MAX),
         subsequence_length(0),
         num_big_subseqiences(0),
-        num_total_big_subsequence_numbers(0),
-        _init_nb_arcs(nb_arcs),
-        _node_num(0),
-        _n1(0),
-        _n2(0),
-        _stype(SupplyType::GEQ),
-        _cost_mode(CostMode::StoredArray),
-        _cost_storage_mode(options.cost_storage_mode),
-        _flow_storage_mode(options.flow_storage_mode),
-        _endpoint_storage_mode(options.endpoint_storage_mode),
-        _state_storage_mode(options.state_storage_mode),
-        _dim(0),
-        _metric(0),
-        D_n2(0),
-        _init_nb_nodes(nbnodes),
-        _has_max_cost(false),
-        _arc_mixing(options.arc_mixing),
-        _warmstart_provided(false),
-        _warmstart_tree_built(false) {
+        num_total_big_subsequence_numbers(0) {
     reset();
   }
 
