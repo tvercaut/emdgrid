@@ -27,18 +27,6 @@ struct Invalid {
 
 inline constexpr Invalid INVALID_OBJ = Invalid();
 
-#ifndef POTLEMON_DIGRAPH_TYPEDEFS
-#define POTLEMON_DIGRAPH_TYPEDEFS(Digraph) \
-  typedef Digraph::Node Node;              \
-  typedef Digraph::Arc Arc;
-#endif
-
-#ifndef POTLEMON_TEMPLATE_DIGRAPH_TYPEDEFS
-#define POTLEMON_TEMPLATE_DIGRAPH_TYPEDEFS(Digraph) \
-  typedef typename Digraph::Node Node;              \
-  typedef typename Digraph::Arc Arc;
-#endif
-
 class SparseBipartiteDigraphBase {
  public:
   typedef SparseBipartiteDigraphBase Digraph;
@@ -133,10 +121,10 @@ class SparseBipartiteDigraphBase {
   }
 
  public:
-  virtual Node operator()(int ix) const { return Node(ix); }
+  Node operator()(int ix) const { return Node(ix); }
   static int index(const Node& node) { return node; }
 
-  virtual void buildFromEdges(const std::vector<std::pair<Node, Node>>& edges) {
+  void buildFromEdges(const std::vector<std::pair<Node, Node>>& edges) {
     m_arc_num = static_cast<int64_t>(edges.size());
 
     if (m_arc_num == 0) {
@@ -189,7 +177,7 @@ class SparseBipartiteDigraphBase {
     m_in_arcs_built = false;
   }
 
-  virtual Arc arc(const Node& s, const Node& t) const {
+  Arc arc(const Node& s, const Node& t) const {
     if (s < 0 || s >= m_n1 || t < m_n1 || t >= m_node_num) {
       return Arc(-1);
     }
@@ -208,8 +196,8 @@ class SparseBipartiteDigraphBase {
     return Arc(-1);
   }
 
-  virtual int nodeNum() const { return m_node_num; }
-  virtual int64_t arcNum() const { return m_arc_num; }
+  int nodeNum() const { return m_node_num; }
+  int64_t arcNum() const { return m_arc_num; }
 
   int maxNodeId() const { return m_node_num - 1; }
   int64_t maxArcId() const { return m_arc_num - 1; }
@@ -310,7 +298,7 @@ class SparseBipartiteDigraph : public SparseBipartiteDigraphBase {
     Parent::buildFromEdges(edges);
   }
 
-  Arc arc(const Node& s, const Node& t) const { return Parent::arc(s, t); }
+  Arc arc(Node s, Node t) const { return Parent::arc(s, t); }
 
   int nodeNum() const { return Parent::nodeNum(); }
   int64_t arcNum() const { return Parent::arcNum(); }

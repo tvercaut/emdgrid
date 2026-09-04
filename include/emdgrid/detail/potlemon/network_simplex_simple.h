@@ -42,28 +42,11 @@
 
 #include "emdgrid/detail/potlemon/sparse_bipartitegraph.h"
 
-#pragma push_macro("MAX")
-#pragma push_macro("MIN")
-#pragma push_macro("INVALID")
-#pragma push_macro("INVALIDNODE")
-
-#undef MAX
-#undef MIN
-#undef INVALIDNODE
-#undef INVALID
-
-#define INVALIDNODE (-1)
-#define INVALID (-1)
-
-#ifndef EPSILON
-#define EPSILON 2.2204460492503131e-15
-#endif
-
-#ifndef POTLEMON_EPSILON
-#define POTLEMON_EPSILON 1e-8
-#endif
-
 namespace potlemon {
+
+inline constexpr int INVALID_NODE = -1;
+inline constexpr int INVALID_ARC = -1;
+inline constexpr double POTLEMON_EPSILON = 1e-8;
 
 /// Type alias for hash map used in Network Simplex sparse structures.
 template <typename Key, typename Value>
@@ -194,7 +177,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   enum SupplyType : std::uint8_t { GEQ, LEQ };
 
  private:
-  POTLEMON_TEMPLATE_DIGRAPH_TYPEDEFS(GR)
+  typedef typename GR::Node Node;
+  typedef typename GR::Arc Arc;
 
   typedef std::vector<int> IntVector;
   typedef std::vector<ArcsType> ArcVector;
@@ -337,7 +321,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   ArcsType par_stem;
   ArcsType new_stem;
   Value delta;
-  const Value MAX;
+  const Value max_value_limit;
   ArcsType mixingCoeff;
   ArcsType subsequence_length;
   ArcsType num_big_subseqiences;
@@ -392,7 +376,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         par_stem(0),
         new_stem(0),
         delta(0),
-        MAX(std::numeric_limits<Value>::max()),
+        max_value_limit(std::numeric_limits<Value>::max()),
         mixingCoeff(0),
         subsequence_length(0),
         num_big_subseqiences(0),
@@ -408,7 +392,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     k -= num_total_big_subsequence_numbers * smallv;
     ArcsType subsequence_length2 = subsequence_length - smallv;
     ArcsType subsequence_num =
-        (k / subsequence_length2) + (num_big_subseqiences * smallv);
+        (k / subsequence_length2) + num_big_subseqiences * smallv;
     ArcsType subsequence_offset = (k % subsequence_length2) * mixingCoeff;
     return subsequence_offset + subsequence_num;
   }
@@ -458,7 +442,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       Cost max_value = _coords_a[d];
 
       for (int i = 0; i < _n1; ++i) {
-        const Cost value = _coords_a[(i * _dim) + d];
+        const Cost value = _coords_a[i * _dim + d];
         if (value < min_value) {
           min_value = value;
         }
@@ -467,7 +451,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         }
       }
       for (int j = 0; j < _n2; ++j) {
-        const Cost value = _coords_b[(j * _dim) + d];
+        const Cost value = _coords_b[j * _dim + d];
         if (value < min_value) {
           min_value = value;
         }
@@ -724,7 +708,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   NetworkSimplexSimple& costMap(const CostMap& map) {
     Arc a;
     _graph.first(a);
-    for (; a != INVALID; _graph.next(a)) {
+    for (; a != INVALID_ARC; _graph.next(a)) {
       setArcCost(getArcID(a), map[a]);
     }
     return *this;
@@ -768,10 +752,10 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   Cost computeLazyCost(int i, int j_adjusted) const {
     const double* xa =
         _coords_a +
-        (static_cast<std::ptrdiff_t>(i) * static_cast<std::ptrdiff_t>(_dim));
+        static_cast<std::ptrdiff_t>(i) * static_cast<std::ptrdiff_t>(_dim);
     const double* xb =
-        _coords_b + (static_cast<std::ptrdiff_t>(j_adjusted) *
-                        static_cast<std::ptrdiff_t>(_dim));
+        _coords_b + static_cast<std::ptrdiff_t>(j_adjusted) *
+                        static_cast<std::ptrdiff_t>(_dim);
     Cost cost = 0;
 
     if (_metric == 0) {
@@ -815,7 +799,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   NetworkSimplexSimple& supplyMap(const SupplyMap& map) {
     Node n;
     _graph.first(n);
-    for (; n != INVALIDNODE; _graph.next(n)) {
+    for (; n != INVALID_NODE; _graph.next(n)) {
       _supply[_node_id(n)] = map[n];
     }
     return *this;
@@ -827,7 +811,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     (void)n2;
     Node n;
     _graph.first(n);
-    for (; n != INVALIDNODE; _graph.next(n)) {
+    for (; n != INVALID_NODE; _graph.next(n)) {
       if (n < n1) {
         _supply[_node_id(n)] = map1[n];
       } else {
@@ -843,7 +827,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     (void)n2;
     Node n;
     _graph.first(n);
-    for (; n != INVALIDNODE; _graph.next(n)) {
+    for (; n != INVALID_NODE; _graph.next(n)) {
       if (n < n1) {
         _supply[_node_id(n)] = val1;
       } else {
@@ -910,7 +894,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     _node_num = _init_nb_nodes;
     _arc_num = _init_nb_arcs;
     int all_node_num = _node_num + 1;
-    ArcsType max_arc_num = _arc_num + (2 * _node_num);
+    ArcsType max_arc_num = _arc_num + 2 * _node_num;
     _all_arc_num = max_arc_num;
 
     if (usesArcEndpoints()) {
@@ -968,7 +952,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           static_cast<ArcsType>(std::sqrt(static_cast<double>(_arc_num))),
           static_cast<ArcsType>(10));
       mixingCoeff = k;
-      subsequence_length = (_arc_num / mixingCoeff) + 1;
+      subsequence_length = _arc_num / mixingCoeff + 1;
       num_big_subseqiences = _arc_num % mixingCoeff;
       num_total_big_subsequence_numbers =
           subsequence_length * num_big_subseqiences;
@@ -977,7 +961,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       ArcsType j = 0;
       Arc a;
       _graph.first(a);
-      for (; a != INVALID; _graph.next(a)) {
+      for (; a != INVALID_ARC; _graph.next(a)) {
         setArcEndpoints(i, _node_id(_graph.source(a)),
                         _node_id(_graph.target(a)));
         i += k;
@@ -990,7 +974,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       ArcsType i = 0;
       Arc a;
       _graph.first(a);
-      for (; a != INVALID; _graph.next(a), ++i) {
+      for (; a != INVALID_ARC; _graph.next(a), ++i) {
         setArcEndpoints(i, _node_id(_graph.source(a)),
                         _node_id(_graph.target(a)));
       }
@@ -1020,7 +1004,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   void flowMap(FlowMap& map) const {
     Arc a;
     _graph.first(a);
-    for (; a != INVALID; _graph.next(a)) {
+    for (; a != INVALID_ARC; _graph.next(a)) {
       map.set(a, arcFlow(getArcID(a)));
     }
   }
@@ -1031,7 +1015,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   void potentialMap(PotentialMap& map) const {
     Node n;
     _graph.first(n);
-    for (; n != INVALIDNODE; _graph.next(n)) {
+    for (; n != INVALID_NODE; _graph.next(n)) {
       map.set(n, _pi[_node_id(n)]);
     }
   }
@@ -1075,7 +1059,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         }
       }
       if (std::numeric_limits<Cost>::is_exact) {
-        ART_COST = (std::numeric_limits<Cost>::max() / 2) + 1;
+        ART_COST = std::numeric_limits<Cost>::max() / 2 + 1;
       } else {
         ART_COST = (ART_COST + 1) * _node_num;
       }
@@ -1428,7 +1412,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
     Cost ART_COST;
     if (std::numeric_limits<Cost>::is_exact) {
-      ART_COST = (std::numeric_limits<Cost>::max() / 2) + 1;
+      ART_COST = std::numeric_limits<Cost>::max() / 2 + 1;
     } else {
       Cost max_cost = maxRealArcCost();
       ART_COST = (max_cost + 1) * _node_num;
@@ -1743,7 +1727,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     std::vector<Node> demand_nodes;
     Node u_node = 0;
     _graph.first(u_node);
-    for (; u_node != INVALIDNODE; _graph.next(u_node)) {
+    for (; u_node != INVALID_NODE; _graph.next(u_node)) {
       curr = _supply[_node_id(u_node)];
       if (curr > 0) {
         total += curr;
@@ -1777,7 +1761,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           }
           Arc a;
           _graph.firstIn(a, v_curr);
-          for (; a != INVALID; _graph.nextIn(a)) {
+          for (; a != INVALID_ARC; _graph.nextIn(a)) {
             u_curr = _graph.source(a);
             if (u_curr < 0 || u_curr >= static_cast<Node>(_node_num)) {
               continue;
@@ -1798,17 +1782,17 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           Node v_curr = demand_nodes[i];
           Cost c = 0;
           Cost min_cost = std::numeric_limits<Cost>::max();
-          Arc min_arc = INVALID;
+          Arc min_arc = INVALID_ARC;
           Arc a;
           _graph.firstIn(a, v_curr);
-          for (; a != INVALID; _graph.nextIn(a)) {
+          for (; a != INVALID_ARC; _graph.nextIn(a)) {
             c = getCostForArc(getArcID(a));
             if (c < min_cost) {
               min_cost = c;
               min_arc = a;
             }
           }
-          if (min_arc != INVALID) {
+          if (min_arc != INVALID_ARC) {
             arc_vector.push_back(getArcID(min_arc));
           }
         }
@@ -1818,17 +1802,17 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         Node u_curr = supply_nodes[i];
         Cost c = 0;
         Cost min_cost = std::numeric_limits<Cost>::max();
-        Arc min_arc = INVALID;
+        Arc min_arc = INVALID_ARC;
         Arc a;
         _graph.firstOut(a, u_curr);
-        for (; a != INVALID; _graph.nextOut(a)) {
+        for (; a != INVALID_ARC; _graph.nextOut(a)) {
           c = getCostForArc(getArcID(a));
           if (c < min_cost) {
             min_cost = c;
             min_arc = a;
           }
         }
-        if (min_arc != INVALID) {
+        if (min_arc != INVALID_ARC) {
           arc_vector.push_back(getArcID(min_arc));
         }
       }
@@ -1843,7 +1827,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       }
       findJoinNode();
       bool change = findLeavingArc();
-      if (delta >= MAX) {
+      if (delta >= max_value_limit) {
         return false;
       }
       changeFlow(change);
@@ -1877,7 +1861,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
       findJoinNode();
       bool change = findLeavingArc();
-      if (delta >= MAX) {
+      if (delta >= max_value_limit) {
         return UNBOUNDED;
       }
       changeFlow(change);
@@ -1931,8 +1915,3 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 };
 
 }  // namespace potlemon
-
-#pragma pop_macro("INVALIDNODE")
-#pragma pop_macro("INVALID")
-#pragma pop_macro("MIN")
-#pragma pop_macro("MAX")
