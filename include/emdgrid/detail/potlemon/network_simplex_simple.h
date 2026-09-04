@@ -35,8 +35,8 @@
 #include <iostream>
 #include <limits>
 #include <queue>
-#include <unordered_map>
 #include <stack>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -59,8 +59,8 @@
 #define EPSILON 2.2204460492503131e-15
 #endif
 
-#ifndef _EPSILON
-#define _EPSILON 1e-8
+#ifndef POTLEMON_EPSILON
+#define POTLEMON_EPSILON 1e-8
 #endif
 
 namespace potlemon {
@@ -153,15 +153,18 @@ template <typename GR, typename V = int64_t, typename C = V,
           typename NodesType = uint16_t, typename ArcsType = int64_t>
 class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
  public:
-  enum class CostMode { StoredArray, DenseMatrix, LazyGeometry };
+  enum class CostMode : std::uint8_t { StoredArray, DenseMatrix, LazyGeometry };
 
-  enum class CostStorageMode { AllArcCosts, ArtificialArcCosts };
+  enum class CostStorageMode : std::uint8_t {
+    AllArcCosts,
+    ArtificialArcCosts
+  };
 
-  enum class FlowStorageMode { Dense, SparseArcFlows };
+  enum class FlowStorageMode : std::uint8_t { Dense, SparseArcFlows };
 
-  enum class EndpointStorageMode { Dense, ArcEndpoints };
+  enum class EndpointStorageMode : std::uint8_t { Dense, ArcEndpoints };
 
-  enum class StateStorageMode { Dense, PackedArcStates };
+  enum class StateStorageMode : std::uint8_t { Dense, PackedArcStates };
 
   struct SimplexOptions {
     bool arc_mixing;
@@ -178,55 +181,31 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           state_storage_mode(StateStorageMode::Dense) {}
   };
 
-  NetworkSimplexSimple(const GR& graph, SimplexOptions options, int nbnodes,
-                       ArcsType nb_arcs, uint64_t maxiters)
-      : _graph(graph),
-        _n1(0),
-        _n2(0),
-        _max_cost(0),
-        _has_max_cost(false),
-        _arc_mixing(options.arc_mixing),
-        _cost_mode(CostMode::StoredArray),
-        _cost_storage_mode(options.cost_storage_mode),
-        _flow_storage_mode(options.flow_storage_mode),
-        _endpoint_storage_mode(options.endpoint_storage_mode),
-        _state_storage_mode(options.state_storage_mode),
-        _coords_a(nullptr),
-        _coords_b(nullptr),
-        _dim(0),
-        _metric(0),
-        _D_ptr(nullptr),
-        _D_n2(0),
-        _warmstart_provided(false),
-        _warmstart_tree_built(false),
-        MAX(std::numeric_limits<Value>::max()),
-        INF(std::numeric_limits<Value>::has_infinity
-                ? std::numeric_limits<Value>::infinity()
-                : MAX),
-        _init_nb_nodes(nbnodes),
-        _init_nb_arcs(nb_arcs) {
-    reset();
-    max_iter = maxiters;
-  }
-
   typedef V Value;
   typedef C Cost;
 
-  enum ProblemType { INFEASIBLE, OPTIMAL, UNBOUNDED, MAX_ITER_REACHED };
+  enum ProblemType : std::uint8_t {
+    INFEASIBLE,
+    OPTIMAL,
+    UNBOUNDED,
+    MAX_ITER_REACHED
+  };
 
-  enum SupplyType { GEQ, LEQ };
+  enum SupplyType : std::uint8_t { GEQ, LEQ };
 
  private:
-  uint64_t max_iter;
   POTLEMON_TEMPLATE_DIGRAPH_TYPEDEFS(GR)
 
   typedef std::vector<int> IntVector;
   typedef std::vector<ArcsType> ArcVector;
   typedef std::vector<Value> ValueVector;
   typedef std::vector<Cost> CostVector;
-  typedef std::vector<char> BoolVector;
-
-  enum ArcState { STATE_UPPER = -1, STATE_TREE = 0, STATE_LOWER = 1 };
+  enum ArcState : std::int8_t {
+    STATE_UPPER = -1,
+    STATE_TREE = 0,
+    STATE_LOWER = 1
+  };
+  typedef std::vector<bool> BoolVector;
 
   class PackedStateVector {
    public:
@@ -276,53 +255,56 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
   typedef std::vector<signed char> StateVector;
 
- private:
+  // Ordered fields to minimize alignment padding
+  uint64_t max_iter;
   const GR& _graph;
-  int _node_num;
-  int _n1;
-  int _n2;
   ArcsType _arc_num;
   ArcsType _all_arc_num;
   ArcsType _search_arc_num;
-
-  SupplyType _stype;
   Value _sum_supply;
   Cost _max_cost;
-  bool _has_max_cost;
+  const double* _coords_a;
+  const double* _coords_b;
+  const double* _D_ptr;
+  ArcsType _root;
+  ArcsType in_arc;
+  ArcsType join;
+  ArcsType u_in;
+  ArcsType v_in;
+  ArcsType u_out;
+  ArcsType v_out;
+  ArcsType first;
+  ArcsType second;
+  ArcsType right;
+  ArcsType last;
+  ArcsType stem;
+  ArcsType par_stem;
+  ArcsType new_stem;
+  Value delta;
+  const Value MAX;
+  ArcsType mixingCoeff;
 
-  inline int _node_id(int n) const { return _node_num - n - 1; }
+ public:
+  const Value INF;
+
+ private:
+  ArcsType subsequence_length;
+  ArcsType num_big_subseqiences;
+  ArcsType num_total_big_subsequence_numbers;
+
+ public:
+  ArcsType _init_nb_arcs;
 
   IntVector _source;
   IntVector _target;
   IntVector _artificial_source;
   IntVector _artificial_target;
-  bool _arc_mixing;
 
- public:
   CostVector _cost;
   ValueVector _supply;
   ValueVector _flow;
   ValueVector _artificial_flow;
   CostVector _pi;
-
-  CostMode _cost_mode;
-  CostStorageMode _cost_storage_mode;
-  FlowStorageMode _flow_storage_mode;
-  EndpointStorageMode _endpoint_storage_mode;
-  StateStorageMode _state_storage_mode;
-  const double* _coords_a;
-  const double* _coords_b;
-  int _dim;
-  int _metric;
-
-  const double* _D_ptr;
-  int _D_n2;
-
- private:
-  HashMap<ArcsType, Value> _real_flow;
-
-  bool _warmstart_provided;
-  bool _warmstart_tree_built;
 
   IntVector _parent;
   ArcVector _pred;
@@ -334,20 +316,87 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   BoolVector _forward;
   StateVector _state;
   PackedStateVector _packed_state;
-  ArcsType _root;
+  HashMap<ArcsType, Value> _real_flow;
 
-  ArcsType in_arc, join, u_in, v_in, u_out, v_out;
-  ArcsType first, second, right, last;
-  ArcsType stem, par_stem, new_stem;
-  Value delta;
+  int _node_num;
+  int _n1;
+  int _n2;
+  SupplyType _stype;
+  CostMode _cost_mode;
+  CostStorageMode _cost_storage_mode;
+  FlowStorageMode _flow_storage_mode;
+  EndpointStorageMode _endpoint_storage_mode;
+  StateStorageMode _state_storage_mode;
+  int _dim;
+  int _metric;
+  int _D_n2;
+  int _init_nb_nodes;
 
-  const Value MAX;
-  ArcsType mixingCoeff;
+  bool _has_max_cost;
+  bool _arc_mixing;
+  bool _warmstart_provided;
+  bool _warmstart_tree_built;
 
  public:
-  const Value INF;
+  NetworkSimplexSimple(const GR& graph, SimplexOptions options, int nbnodes,
+                       ArcsType nb_arcs, uint64_t maxiters)
+      : max_iter(maxiters),
+        _graph(graph),
+        _arc_num(0),
+        _all_arc_num(0),
+        _search_arc_num(0),
+        _sum_supply(0),
+        _max_cost(0),
+        _coords_a(nullptr),
+        _coords_b(nullptr),
+        _D_ptr(nullptr),
+        _root(0),
+        in_arc(0),
+        join(0),
+        u_in(0),
+        v_in(0),
+        u_out(0),
+        v_out(0),
+        first(0),
+        second(0),
+        right(0),
+        last(0),
+        stem(0),
+        par_stem(0),
+        new_stem(0),
+        delta(0),
+        MAX(std::numeric_limits<Value>::max()),
+        mixingCoeff(0),
+        INF(std::numeric_limits<Value>::has_infinity
+                ? std::numeric_limits<Value>::infinity()
+                : MAX),
+        subsequence_length(0),
+        num_big_subseqiences(0),
+        num_total_big_subsequence_numbers(0),
+        _init_nb_arcs(nb_arcs),
+        _node_num(0),
+        _n1(0),
+        _n2(0),
+        _stype(SupplyType::GEQ),
+        _cost_mode(CostMode::StoredArray),
+        _cost_storage_mode(options.cost_storage_mode),
+        _flow_storage_mode(options.flow_storage_mode),
+        _endpoint_storage_mode(options.endpoint_storage_mode),
+        _state_storage_mode(options.state_storage_mode),
+        _dim(0),
+        _metric(0),
+        _D_n2(0),
+        _init_nb_nodes(nbnodes),
+        _has_max_cost(false),
+        _arc_mixing(options.arc_mixing),
+        _warmstart_provided(false),
+        _warmstart_tree_built(false) {
+    reset();
+  }
 
  private:
+  inline int _node_id(int n) const { return _node_num - n - 1; }
+
   inline ArcsType sequence(ArcsType k) const {
     ArcsType smallv = (k > num_total_big_subsequence_numbers) & 1;
     k -= num_total_big_subsequence_numbers * smallv;
@@ -357,43 +406,40 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     ArcsType subsequence_offset = (k % subsequence_length2) * mixingCoeff;
     return subsequence_offset + subsequence_num;
   }
-  ArcsType subsequence_length;
-  ArcsType num_big_subseqiences;
-  ArcsType num_total_big_subsequence_numbers;
 
   inline ArcsType getArcID(const Arc& arc) const {
     ArcsType n = _arc_num - GR::id(arc) - 1;
-    if (_arc_mixing)
+    if (_arc_mixing) {
       return sequence(n);
-    else
-      return n;
+    }
+    return n;
   }
 
-  inline bool usesStoredCost() const {
+  bool usesStoredCost() const {
     return _cost_mode == CostMode::StoredArray;
   }
 
-  inline bool usesDenseCost() const {
+  bool usesDenseCost() const {
     return _cost_mode == CostMode::DenseMatrix;
   }
 
-  inline bool usesLazyCost() const {
+  bool usesLazyCost() const {
     return _cost_mode == CostMode::LazyGeometry;
   }
 
-  inline bool storesArtificialArcCosts() const {
+  bool storesArtificialArcCosts() const {
     return _cost_storage_mode == CostStorageMode::ArtificialArcCosts;
   }
 
-  inline bool storesSparseArcFlows() const {
+  bool storesSparseArcFlows() const {
     return _flow_storage_mode == FlowStorageMode::SparseArcFlows;
   }
 
-  inline bool usesArcEndpoints() const {
+  bool usesArcEndpoints() const {
     return _endpoint_storage_mode == EndpointStorageMode::ArcEndpoints;
   }
 
-  inline bool usesPackedArcStates() const {
+  bool usesPackedArcStates() const {
     return _state_storage_mode == StateStorageMode::PackedArcStates;
   }
 
@@ -443,7 +489,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     return max_cost;
   }
 
-  inline int arcSource(ArcsType arc_id) const {
+  int arcSource(ArcsType arc_id) const {
     if (usesArcEndpoints()) {
       if (arc_id < _arc_num) {
         const ArcsType graph_arc = _arc_num - arc_id - 1;
@@ -454,7 +500,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     return _source[arc_id];
   }
 
-  inline int arcTarget(ArcsType arc_id) const {
+  int arcTarget(ArcsType arc_id) const {
     if (usesArcEndpoints()) {
       if (arc_id < _arc_num) {
         const ArcsType graph_arc = _arc_num - arc_id - 1;
@@ -465,7 +511,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     return _target[arc_id];
   }
 
-  inline void setArcEndpoints(ArcsType arc_id, int source, int target) {
+  void setArcEndpoints(ArcsType arc_id, int source, int target) {
     if (usesArcEndpoints()) {
       if (arc_id >= _arc_num) {
         _artificial_source[arc_id - _arc_num] = source;
@@ -477,7 +523,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     _target[arc_id] = target;
   }
 
-  inline void setArcCost(ArcsType arc_id, Cost cost) {
+  void setArcCost(ArcsType arc_id, Cost cost) {
     if (storesArtificialArcCosts()) {
       if (arc_id >= _arc_num) {
         _cost[arc_id - _arc_num] = cost;
@@ -491,14 +537,14 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     }
   }
 
-  inline signed char arcState(ArcsType arc_id) const {
+  signed char arcState(ArcsType arc_id) const {
     if (usesPackedArcStates()) {
       return _packed_state.get(arc_id);
     }
     return _state[arc_id];
   }
 
-  inline void setArcState(ArcsType arc_id, signed char state) {
+  void setArcState(ArcsType arc_id, signed char state) {
     if (usesPackedArcStates()) {
       _packed_state.set(arc_id, state);
       return;
@@ -506,11 +552,11 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     _state[arc_id] = state;
   }
 
-  inline void flipArcState(ArcsType arc_id) {
+  void flipArcState(ArcsType arc_id) {
     setArcState(arc_id, -arcState(arc_id));
   }
 
-  inline void fillArcStates(ArcsType count, signed char state) {
+  void fillArcStates(ArcsType count, signed char state) {
     if (usesPackedArcStates()) {
       _packed_state.fill(count, state);
     } else {
@@ -518,12 +564,12 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     }
   }
 
-  inline ArcsType flowArcCount() const {
+  ArcsType flowArcCount() const {
     return storesSparseArcFlows() ? _all_arc_num
                                   : static_cast<ArcsType>(_flow.size());
   }
 
-  inline Value arcFlow(ArcsType arc_id) const {
+  Value arcFlow(ArcsType arc_id) const {
     if (storesSparseArcFlows()) {
       if (arc_id < _arc_num) {
         typename HashMap<ArcsType, Value>::const_iterator it =
@@ -535,7 +581,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     return _flow[arc_id];
   }
 
-  inline void setArcFlow(ArcsType arc_id, Value flow) {
+  void setArcFlow(ArcsType arc_id, Value flow) {
     if (storesSparseArcFlows()) {
       if (arc_id < _arc_num) {
         if (flow == 0) {
@@ -551,16 +597,16 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     _flow[arc_id] = flow;
   }
 
-  inline void addArcFlow(ArcsType arc_id, Value delta) {
+  void addArcFlow(ArcsType arc_id, Value delta_val) {
     if (storesSparseArcFlows()) {
       if (arc_id < _arc_num) {
-        setArcFlow(arc_id, arcFlow(arc_id) + delta);
+        setArcFlow(arc_id, arcFlow(arc_id) + delta_val);
       } else {
-        _artificial_flow[arc_id - _arc_num] += delta;
+        _artificial_flow[arc_id - _arc_num] += delta_val;
       }
       return;
     }
-    _flow[arc_id] += delta;
+    _flow[arc_id] += delta_val;
   }
 
   class BlockSearchPivotRule {
@@ -579,8 +625,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           _search_arc_num(ns._search_arc_num),
           _next_arc(0),
           _ns(ns) {
-      const double BLOCK_SIZE_FACTOR = 1.0;
-      const ArcsType MIN_BLOCK_SIZE = 10;
+      constexpr double BLOCK_SIZE_FACTOR = 1.0;
+      constexpr ArcsType MIN_BLOCK_SIZE = 10;
       _block_size = std::max(
           static_cast<ArcsType>(BLOCK_SIZE_FACTOR *
                                 std::sqrt(static_cast<double>(
@@ -591,10 +637,11 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     inline Cost getCost(ArcsType e) const { return _ns.getCostForArc(e); }
 
     bool findEnteringArc() {
-      Cost c, min = 0;
-      ArcsType e;
+      Cost c = 0;
+      Cost min = 0;
+      ArcsType e = 0;
       ArcsType cnt = _block_size;
-      double a;
+      double a = 0.0;
       for (e = _next_arc; e != _search_arc_num; ++e) {
         c = _ns.arcState(e) *
             (getCost(e) + _pi[_ns.arcSource(e)] - _pi[_ns.arcTarget(e)]);
@@ -608,7 +655,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
                   ? std::abs(_pi[_ns.arcSource(_in_arc)])
                   : std::abs(_pi[_ns.arcTarget(_in_arc)]);
           a = a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-          if (min < -EPSILON * a) goto search_end;
+          if (min < -POTLEMON_EPSILON * a) {
+            goto search_end;
+          }
           cnt = _block_size;
         }
       }
@@ -625,7 +674,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
                   ? std::abs(_pi[_ns.arcSource(_in_arc)])
                   : std::abs(_pi[_ns.arcTarget(_in_arc)]);
           a = a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-          if (min < -EPSILON * a) goto search_end;
+          if (min < -POTLEMON_EPSILON * a) {
+            goto search_end;
+          }
           cnt = _block_size;
         }
       }
@@ -634,7 +685,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
               ? std::abs(_pi[_ns.arcSource(_in_arc)])
               : std::abs(_pi[_ns.arcTarget(_in_arc)]);
       a = a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-      if (min >= -EPSILON * a) return false;
+      if (min >= -POTLEMON_EPSILON * a) {
+        return false;
+      }
 
     search_end:
       _next_arc = e;
@@ -648,9 +701,6 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   int n1() const { return _n1; }
   int n2() const { return _n2; }
   Cost pi(int internal_node) const { return _pi[internal_node]; }
-
-  int _init_nb_nodes;
-  ArcsType _init_nb_arcs;
 
   template <typename CostMap>
   NetworkSimplexSimple& costMap(const CostMap& map) {
@@ -690,14 +740,20 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     _has_max_cost = true;
     _max_cost = static_cast<Cost>(D[0]);
     for (ArcsType i = 1; i != _arc_num; ++i) {
-      if (D[i] > _max_cost) _max_cost = static_cast<Cost>(D[i]);
+      if (D[i] > _max_cost) {
+        _max_cost = static_cast<Cost>(D[i]);
+      }
     }
     return *this;
   }
 
-  inline Cost computeLazyCost(int i, int j_adjusted) const {
-    const double* xa = _coords_a + i * _dim;
-    const double* xb = _coords_b + j_adjusted * _dim;
+  Cost computeLazyCost(int i, int j_adjusted) const {
+    const double* xa =
+        _coords_a +
+        static_cast<std::ptrdiff_t>(i) * static_cast<std::ptrdiff_t>(_dim);
+    const double* xb =
+        _coords_b + static_cast<std::ptrdiff_t>(j_adjusted) *
+                        static_cast<std::ptrdiff_t>(_dim);
     Cost cost = 0;
 
     if (_metric == 0) {
@@ -706,39 +762,35 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         cost += diff * diff;
       }
       return cost;
-    } else if (_metric == 1) {
+    }
+    if (_metric == 1) {
       for (int d = 0; d < _dim; ++d) {
         Cost diff = static_cast<Cost>(xa[d] - xb[d]);
         cost += diff * diff;
       }
       return std::sqrt(cost);
-    } else {
-      for (int d = 0; d < _dim; ++d) {
-        cost += std::abs(static_cast<Cost>(xa[d] - xb[d]));
-      }
-      return cost;
     }
+    for (int d = 0; d < _dim; ++d) {
+      cost += std::abs(static_cast<Cost>(xa[d] - xb[d]));
+    }
+    return cost;
   }
 
-  inline Cost getCostForArc(ArcsType arc_id) const {
+  Cost getCostForArc(ArcsType arc_id) const {
     if (usesDenseCost()) {
       if (arc_id >= _arc_num) {
         return storesArtificialArcCosts() ? _cost[arc_id - _arc_num]
                                           : _cost[arc_id];
       }
       return static_cast<Cost>(_D_ptr[_arc_num - arc_id - 1]);
-    } else if (usesStoredCost()) {
+    }
+    if (usesStoredCost() || arc_id >= _arc_num) {
       return storesArtificialArcCosts() ? _cost[arc_id - _arc_num]
                                         : _cost[arc_id];
-    } else {
-      if (arc_id >= _arc_num) {
-        return storesArtificialArcCosts() ? _cost[arc_id - _arc_num]
-                                          : _cost[arc_id];
-      }
-      int i = _node_num - arcSource(arc_id) - 1;
-      int j = _node_num - arcTarget(arc_id) - 1 - _n1;
-      return computeLazyCost(i, j);
     }
+    int i = _node_num - arcSource(arc_id) - 1;
+    int j = _node_num - arcTarget(arc_id) - 1 - _n1;
+    return computeLazyCost(i, j);
   }
 
   template <typename SupplyMap>
@@ -758,10 +810,11 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     Node n;
     _graph.first(n);
     for (; n != INVALIDNODE; _graph.next(n)) {
-      if (n < n1)
+      if (n < n1) {
         _supply[_node_id(n)] = map1[n];
-      else
+      } else {
         _supply[_node_id(n)] = map2[n - n1];
+      }
     }
     return *this;
   }
@@ -769,13 +822,15 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   template <typename SupplyMap>
   NetworkSimplexSimple& supplyMapAll(SupplyMap val1, int n1, SupplyMap val2,
                                      int n2) {
+    (void)n2;
     Node n;
     _graph.first(n);
     for (; n != INVALIDNODE; _graph.next(n)) {
-      if (n < n1)
+      if (n < n1) {
         _supply[_node_id(n)] = val1;
-      else
+      } else {
         _supply[_node_id(n)] = val2;
+      }
     }
     return *this;
   }
@@ -807,10 +862,14 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
   ProblemType run() {
     if (_warmstart_provided) {
-      if (!warmstartInit()) return INFEASIBLE;
+      if (!warmstartInit()) {
+        return INFEASIBLE;
+      }
       _warmstart_tree_built = true;
     } else {
-      if (!init()) return INFEASIBLE;
+      if (!init()) {
+        return INFEASIBLE;
+      }
       _warmstart_tree_built = false;
     }
 
@@ -839,27 +898,32 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     if (usesArcEndpoints()) {
       _source.clear();
       _target.clear();
-      _artificial_source.resize(2 * _node_num);
-      _artificial_target.resize(2 * _node_num);
+      _artificial_source.resize(static_cast<std::size_t>(2) *
+                                static_cast<std::size_t>(_node_num));
+      _artificial_target.resize(static_cast<std::size_t>(2) *
+                                static_cast<std::size_t>(_node_num));
     } else {
-      _source.resize(max_arc_num);
-      _target.resize(max_arc_num);
+      _source.resize(static_cast<std::size_t>(max_arc_num));
+      _target.resize(static_cast<std::size_t>(max_arc_num));
       _artificial_source.clear();
       _artificial_target.clear();
     }
 
     if (storesArtificialArcCosts()) {
-      _cost.resize(2 * _node_num);
+      _cost.resize(static_cast<std::size_t>(2) *
+                   static_cast<std::size_t>(_node_num));
     } else {
-      _cost.resize(max_arc_num);
+      _cost.resize(static_cast<std::size_t>(max_arc_num));
     }
-    _supply.resize(all_node_num);
+    _supply.resize(static_cast<std::size_t>(all_node_num));
     if (storesSparseArcFlows()) {
       _flow.clear();
-      _artificial_flow.assign(2 * _node_num, Value(0));
+      _artificial_flow.assign(
+          static_cast<std::size_t>(2) * static_cast<std::size_t>(_node_num),
+          Value(0));
       _real_flow.clear();
     } else {
-      _flow.resize(max_arc_num);
+      _flow.resize(static_cast<std::size_t>(max_arc_num));
       _artificial_flow.clear();
       _real_flow.clear();
     }
@@ -891,13 +955,18 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       num_total_big_subsequence_numbers =
           subsequence_length * num_big_subseqiences;
 
-      ArcsType i = 0, j = 0;
+      ArcsType i = 0;
+      ArcsType j = 0;
       Arc a;
       _graph.first(a);
       for (; a != INVALID; _graph.next(a)) {
         setArcEndpoints(i, _node_id(_graph.source(a)),
                         _node_id(_graph.target(a)));
-        if ((i += k) >= _arc_num) i = ++j;
+        i += k;
+        if (i >= _arc_num) {
+          ++j;
+          i = j;
+        }
       }
     } else {
       ArcsType i = 0;
@@ -951,17 +1020,21 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
  private:
   bool warmstartInit() {
-    if (_node_num == 0) return false;
+    if (_node_num == 0) {
+      return false;
+    }
 
     _sum_supply = 0;
     for (int i = 0; i != _node_num; ++i) {
       _sum_supply += _supply[i];
     }
-    if (std::abs(static_cast<double>(_sum_supply)) > _EPSILON) return false;
+    if (std::abs(static_cast<double>(_sum_supply)) > POTLEMON_EPSILON) {
+      return false;
+    }
     _sum_supply = 0;
     int tree_edges = 0;
     std::vector<ArcsType> tree_arcs;
-    tree_arcs.reserve(_node_num);
+    tree_arcs.reserve(static_cast<std::size_t>(_node_num));
     Cost ART_COST = 0;
 
     {
@@ -972,7 +1045,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       for (ArcsType e = 0; e < _arc_num; ++e) {
         setArcState(e, STATE_LOWER);
         Cost c = getCostForArc(e);
-        if (c > ART_COST) ART_COST = c;
+        if (c > ART_COST) {
+          ART_COST = c;
+        }
         Cost rc = std::abs(c + _pi[arcSource(e)] - _pi[arcTarget(e)]);
         if (static_cast<ArcsType>(maxheap.size()) < K) {
           maxheap.push({rc, e});
@@ -1001,7 +1076,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
       std::vector<int> uf_parent(_node_num);
       std::vector<int> uf_rank(_node_num, 0);
-      for (int i = 0; i < _node_num; ++i) uf_parent[i] = i;
+      for (int i = 0; i < _node_num; ++i) {
+        uf_parent[i] = i;
+      }
 
       for (ArcsType idx = 0; idx < static_cast<ArcsType>(candidates.size()) &&
                              tree_edges < _node_num - 1;
@@ -1009,7 +1086,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         ArcsType e = candidates[idx].second;
         int s = arcSource(e);
         int t = arcTarget(e);
-        int rs = s, rt = t;
+        int rs = s;
+        int rt = t;
         while (uf_parent[rs] != rs) {
           uf_parent[rs] = uf_parent[uf_parent[rs]];
           rs = uf_parent[rs];
@@ -1018,24 +1096,35 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           uf_parent[rt] = uf_parent[uf_parent[rt]];
           rt = uf_parent[rt];
         }
-        if (rs == rt) continue;
-        if (uf_rank[rs] < uf_rank[rt]) std::swap(rs, rt);
+        if (rs == rt) {
+          continue;
+        }
+        if (uf_rank[rs] < uf_rank[rt]) {
+          std::swap(rs, rt);
+        }
         uf_parent[rt] = rs;
-        if (uf_rank[rs] == uf_rank[rt]) uf_rank[rs]++;
+        if (uf_rank[rs] == uf_rank[rt]) {
+          uf_rank[rs]++;
+        }
         tree_arcs.push_back(e);
         tree_edges++;
       }
 
       if (tree_edges < _node_num - 1) {
         std::vector<bool> considered(_arc_num, false);
-        for (auto& c : candidates) considered[c.second] = true;
+        for (auto& c : candidates) {
+          considered[c.second] = true;
+        }
 
         for (ArcsType e = 0;
              e < _arc_num && tree_edges < _node_num - 1; ++e) {
-          if (considered[e]) continue;
+          if (considered[e]) {
+            continue;
+          }
           int s = arcSource(e);
           int t = arcTarget(e);
-          int rs = s, rt = t;
+          int rs = s;
+          int rt = t;
           while (uf_parent[rs] != rs) {
             uf_parent[rs] = uf_parent[uf_parent[rs]];
             rs = uf_parent[rs];
@@ -1044,10 +1133,16 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
             uf_parent[rt] = uf_parent[uf_parent[rt]];
             rt = uf_parent[rt];
           }
-          if (rs == rt) continue;
-          if (uf_rank[rs] < uf_rank[rt]) std::swap(rs, rt);
+          if (rs == rt) {
+            continue;
+          }
+          if (uf_rank[rs] < uf_rank[rt]) {
+            std::swap(rs, rt);
+          }
           uf_parent[rt] = rs;
-          if (uf_rank[rs] == uf_rank[rt]) uf_rank[rs]++;
+          if (uf_rank[rs] == uf_rank[rt]) {
+            uf_rank[rs]++;
+          }
           tree_arcs.push_back(e);
           tree_edges++;
         }
@@ -1070,7 +1165,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     std::vector<int> tree_adj_pos(_node_num, 0);
     for (int k = 0; k < tree_edges; ++k) {
       ArcsType e = tree_arcs[k];
-      int s = arcSource(e), t = arcTarget(e);
+      int s = arcSource(e);
+      int t = arcTarget(e);
       int ps = tree_adj_start[s] + tree_adj_pos[s]++;
       tree_adj_node[ps] = t;
       tree_adj_arc[ps] = e;
@@ -1104,36 +1200,41 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     std::vector<bool> is_rep(_node_num, false);
     std::vector<bool> visited(_node_num, false);
 
-    for (int u = 0; u < _node_num; ++u) {
-      if (visited[u]) continue;
-      is_rep[u] = true;
+    for (int u_node = 0; u_node < _node_num; ++u_node) {
+      if (visited[u_node]) {
+        continue;
+      }
+      is_rep[u_node] = true;
 
-      _parent[u] = _root;
-      _pred[u] = _arc_num + u;
-      _forward[u] = (_supply[u] >= 0);
-      setArcState(_arc_num + u, STATE_TREE);
-      visited[u] = true;
+      _parent[u_node] = _root;
+      _pred[u_node] = _arc_num + u_node;
+      _forward[u_node] = (_supply[u_node] >= 0);
+      setArcState(_arc_num + u_node, STATE_TREE);
+      visited[u_node] = true;
 
       std::queue<int> bfs_queue;
-      bfs_queue.push(u);
+      bfs_queue.push(u_node);
       while (!bfs_queue.empty()) {
-        int v = bfs_queue.front();
+        int v_node = bfs_queue.front();
         bfs_queue.pop();
-        for (int k = tree_adj_start[v]; k < tree_adj_start[v + 1]; ++k) {
-          int w = tree_adj_node[k];
+        for (int k = tree_adj_start[v_node];
+             k < tree_adj_start[v_node + 1]; ++k) {
+          int w_node = tree_adj_node[k];
           ArcsType arc_e = tree_adj_arc[k];
-          if (visited[w]) continue;
-          visited[w] = true;
+          if (visited[w_node]) {
+            continue;
+          }
+          visited[w_node] = true;
 
-          _parent[w] = v;
-          _pred[w] = arc_e;
+          _parent[w_node] = v_node;
+          _pred[w_node] = arc_e;
           setArcState(arc_e, STATE_TREE);
-          _forward[w] = (arcSource(arc_e) == w);
+          _forward[w_node] = (arcSource(arc_e) == w_node);
 
-          setArcState(_arc_num + w, STATE_LOWER);
-          setArcFlow(_arc_num + w, 0);
+          setArcState(_arc_num + w_node, STATE_LOWER);
+          setArcFlow(_arc_num + w_node, 0);
 
-          bfs_queue.push(w);
+          bfs_queue.push(w_node);
         }
       }
     }
@@ -1200,33 +1301,33 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
       int ejected = 0;
       for (int i = static_cast<int>(preorder.size()) - 1; i > 0; --i) {
-        int u = preorder[i];
-        ArcsType e = _pred[u];
+        int u_node = preorder[i];
+        ArcsType e = _pred[u_node];
 
-        Value f = _forward[u] ? net[u] : -net[u];
+        Value f = (_forward[u_node] != 0) ? net[u_node] : -net[u_node];
 
         if (f >= 0) {
           setArcFlow(e, f);
-          net[_parent[u]] += net[u];
+          net[_parent[u_node]] += net[u_node];
         } else {
           if (e < _arc_num) {
             setArcState(e, STATE_LOWER);
             setArcFlow(e, 0);
           }
-          ArcsType art_e = _arc_num + u;
-          _parent[u] = _root;
-          _pred[u] = art_e;
-          _forward[u] = (arcSource(art_e) == u);
+          ArcsType art_e = _arc_num + u_node;
+          _parent[u_node] = _root;
+          _pred[u_node] = art_e;
+          _forward[u_node] = (arcSource(art_e) == u_node) ? 1 : 0;
           setArcState(art_e, STATE_TREE);
 
-          Value art_f = _forward[u] ? net[u] : -net[u];
+          Value art_f = (_forward[u_node] != 0) ? net[u_node] : -net[u_node];
           setArcFlow(art_e, art_f >= 0 ? art_f : -art_f);
           if (art_f < 0) {
-            _forward[u] = !_forward[u];
+            _forward[u_node] = (_forward[u_node] == 0) ? 1 : 0;
             setArcFlow(art_e, -art_f);
           }
 
-          net[_root] += net[u];
+          net[_root] += net[u_node];
           ejected++;
         }
       }
@@ -1255,13 +1356,16 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         for (int u = 0; u <= _node_num; ++u) {
           _rev_thread[_thread[u]] = u;
         }
-        for (int u = 0; u <= _node_num; ++u) _succ_num[u] = 1;
+        for (int u = 0; u <= _node_num; ++u) {
+          _succ_num[u] = 1;
+        }
         for (int i = static_cast<int>(preorder2.size()) - 1; i > 0; --i) {
           _succ_num[_parent[preorder2[i]]] += _succ_num[preorder2[i]];
         }
         std::vector<int> pos2(_node_num + 1);
-        for (size_t i = 0; i < preorder2.size(); ++i)
+        for (size_t i = 0; i < preorder2.size(); ++i) {
           pos2[preorder2[i]] = static_cast<int>(i);
+        }
         for (size_t i = 0; i < preorder2.size(); ++i) {
           int u = preorder2[i];
           _last_succ[u] = preorder2[pos2[u] + _succ_num[u] - 1];
@@ -1276,7 +1380,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         ArcsType e = _pred[u];
         int v = _parent[u];
         Cost c = getCostForArc(e);
-        if (_forward[u]) {
+        if (_forward[u] != 0) {
           _pi[u] = _pi[v] - c;
         } else {
           _pi[u] = _pi[v] + c;
@@ -1296,7 +1400,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     for (int i = 0; i != _node_num; ++i) {
       _sum_supply += _supply[i];
     }
-    if (std::abs(static_cast<double>(_sum_supply)) > _EPSILON) return false;
+    if (std::abs(static_cast<double>(_sum_supply)) > POTLEMON_EPSILON) return false;
 
     _sum_supply = 0;
 
@@ -1443,7 +1547,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     for (int u = static_cast<int>(first); u != static_cast<int>(join);
          u = _parent[u]) {
       e = _pred[u];
-      d = _forward[u] ? arcFlow(e) : INF;
+      d = (_forward[u] != 0) ? arcFlow(e) : INF;
       if (d < delta) {
         delta = d;
         u_out = static_cast<ArcsType>(u);
@@ -1453,7 +1557,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     for (int u = static_cast<int>(second); u != static_cast<int>(join);
          u = _parent[u]) {
       e = _pred[u];
-      d = _forward[u] ? INF : arcFlow(e);
+      d = (_forward[u] != 0) ? INF : arcFlow(e);
       if (d <= delta) {
         delta = d;
         u_out = static_cast<ArcsType>(u);
@@ -1477,11 +1581,11 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       addArcFlow(in_arc, val);
       for (int u = arcSource(in_arc); u != static_cast<int>(join);
            u = _parent[u]) {
-        addArcFlow(_pred[u], _forward[u] ? -val : val);
+        addArcFlow(_pred[u], (_forward[u] != 0) ? -val : val);
       }
       for (int u = arcTarget(in_arc); u != static_cast<int>(join);
            u = _parent[u]) {
-        addArcFlow(_pred[u], _forward[u] ? val : -val);
+        addArcFlow(_pred[u], (_forward[u] != 0) ? val : -val);
       }
     }
     if (change) {
@@ -1552,7 +1656,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     while (u != static_cast<int>(u_in)) {
       w = _parent[u];
       _pred[u] = _pred[w];
-      _forward[u] = !_forward[w];
+      _forward[u] = (_forward[w] == 0) ? 1 : 0;
       tmp_sc += _succ_num[u] - _succ_num[w];
       _succ_num[u] = tmp_sc;
       _last_succ[w] = tmp_ls;
@@ -1601,7 +1705,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   }
 
   void updatePotential() {
-    Cost sigma = _forward[u_in]
+    Cost sigma = (_forward[u_in] != 0)
                      ? _pi[v_in] - _pi[u_in] - getCostForArc(_pred[u_in])
                      : _pi[v_in] - _pi[u_in] + getCostForArc(_pred[u_in]);
     int end = _thread[_last_succ[u_in]];
@@ -1611,44 +1715,58 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   }
 
   bool initialPivots() {
-    Value curr, total = 0;
-    std::vector<Node> supply_nodes, demand_nodes;
-    Node u;
-    _graph.first(u);
-    for (; u != INVALIDNODE; _graph.next(u)) {
-      curr = _supply[_node_id(u)];
+    Value curr = 0;
+    Value total = 0;
+    std::vector<Node> supply_nodes;
+    std::vector<Node> demand_nodes;
+    Node u_node = 0;
+    _graph.first(u_node);
+    for (; u_node != INVALIDNODE; _graph.next(u_node)) {
+      curr = _supply[_node_id(u_node)];
       if (curr > 0) {
         total += curr;
-        supply_nodes.push_back(u);
+        supply_nodes.push_back(u_node);
       } else if (curr < 0) {
-        demand_nodes.push_back(u);
+        demand_nodes.push_back(u_node);
       }
     }
-    if (_sum_supply > 0) total -= _sum_supply;
-    if (total <= 0) return true;
+    if (_sum_supply > 0) {
+      total -= _sum_supply;
+    }
+    if (total <= 0) {
+      return true;
+    }
 
     ArcVector arc_vector;
     if (_sum_supply >= 0) {
       if (supply_nodes.size() == 1 && demand_nodes.size() == 1) {
-        BoolVector reached(_node_num, false);
-        Node s = supply_nodes[0], t = demand_nodes[0];
+        BoolVector reached(static_cast<std::size_t>(_node_num), false);
+        Node s_node = supply_nodes[0];
+        Node t_node = demand_nodes[0];
         std::vector<Node> stack;
-        reached[t] = true;
-        stack.push_back(t);
+        reached[static_cast<std::size_t>(t_node)] = true;
+        stack.push_back(t_node);
         while (!stack.empty()) {
-          Node u_curr, v_curr = stack.back();
+          Node v_curr = stack.back();
+          Node u_curr = 0;
           stack.pop_back();
-          if (v_curr == s) break;
+          if (v_curr == s_node) {
+            break;
+          }
           Arc a;
           _graph.firstIn(a, v_curr);
           for (; a != INVALID; _graph.nextIn(a)) {
             u_curr = _graph.source(a);
-            if (u_curr < 0 || u_curr >= static_cast<Node>(_node_num)) continue;
-            if (reached[static_cast<std::size_t>(u_curr)]) continue;
+            if (u_curr < 0 || u_curr >= static_cast<Node>(_node_num)) {
+              continue;
+            }
+            if (reached[static_cast<std::size_t>(u_curr)]) {
+              continue;
+            }
             ArcsType j = getArcID(a);
             if (INF >= total) {
               arc_vector.push_back(j);
-              reached[static_cast<std::size_t>(u_curr)] = 1;
+              reached[static_cast<std::size_t>(u_curr)] = true;
               stack.push_back(u_curr);
             }
           }
@@ -1656,7 +1774,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       } else {
         for (size_t i = 0; i != demand_nodes.size(); ++i) {
           Node v_curr = demand_nodes[i];
-          Cost c, min_cost = std::numeric_limits<Cost>::max();
+          Cost c = 0;
+          Cost min_cost = std::numeric_limits<Cost>::max();
           Arc min_arc = INVALID;
           Arc a;
           _graph.firstIn(a, v_curr);
@@ -1675,7 +1794,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     } else {
       for (size_t i = 0; i != supply_nodes.size(); ++i) {
         Node u_curr = supply_nodes[i];
-        Cost c, min_cost = std::numeric_limits<Cost>::max();
+        Cost c = 0;
+        Cost min_cost = std::numeric_limits<Cost>::max();
         Arc min_arc = INVALID;
         Arc a;
         _graph.firstOut(a, u_curr);
@@ -1745,7 +1865,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     if (retVal == OPTIMAL) {
       for (ArcsType e = _search_arc_num; e != _all_arc_num; ++e) {
         if (arcFlow(e) != 0) {
-          if (std::abs(static_cast<double>(arcFlow(e))) > _EPSILON) {
+          if (std::abs(static_cast<double>(arcFlow(e))) > POTLEMON_EPSILON) {
             return INFEASIBLE;
           }
           setArcFlow(e, 0);

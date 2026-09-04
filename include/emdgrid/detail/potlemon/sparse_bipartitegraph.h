@@ -152,8 +152,9 @@ class SparseBipartiteDigraphBase {
 
     std::sort(indexed_edges.begin(), indexed_edges.end(),
               [](const auto& a, const auto& b) {
-                if (std::get<0>(a) != std::get<0>(b))
+                if (std::get<0>(a) != std::get<0>(b)) {
                   return std::get<0>(a) < std::get<0>(b);
+                }
                 return std::get<1>(a) < std::get<1>(b);
               });
 
@@ -252,7 +253,9 @@ class SparseBipartiteDigraphBase {
   }
 
   void nextOut(Arc& arc) const {
-    if (arc < 0) return;
+    if (arc < 0) {
+      return;
+    }
 
     build_position_maps();
 
