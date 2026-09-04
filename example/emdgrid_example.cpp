@@ -16,6 +16,7 @@
 #include "emdgrid/knothe_rosenblatt.hpp"
 #include "emdgrid/mcf_l1.hpp"
 #include "emdgrid/mcf_lemon_l1.hpp"
+#include "emdgrid/mcf_potlemon_l1.hpp"
 #include "emdgrid/utils.hpp"
 
 template <std::size_t Dim>
@@ -108,8 +109,8 @@ int main(int argc, char** argv) {
                "Run plan diagnostics (forces transport plan calculation)");
   app.add_option("-s,--solver", solver,
                  "Solver to run: 'emd_l1', 'mcf_l1', 'mcf_lemon_ns', "
-                 "'mcf_lemon_cs', 'dpartion', 'greedy', 'kr', or 'all' "
-                 "(default: 'all')");
+                 "'mcf_lemon_cs', 'mcf_potlemon', 'dpartion', 'greedy', "
+                 "'kr', or 'all' (default: 'all')");
   app.add_option("-m,--metric", kr_metric_str,
                  "Knothe-Rosenblatt metric: 'l1' or 'sqeuclidean' "
                  "(default: 'l1')");
@@ -160,6 +161,8 @@ int main(int argc, char** argv) {
                                  solver == "mcf_lemon_ns");
   const bool run_mcf_lemon_cs = (solver == "all" || solver == "mcf_lemon" ||
                                  solver == "mcf_lemon_cs");
+  const bool run_mcf_potlemon = (solver == "all" || solver == "mcf_potlemon" ||
+                                  solver == "potlemon");
   const bool run_dpartion = (solver == "all" || solver == "dpartion" ||
                              solver == "mcf_dpartion");
   const bool run_greedy = (solver == "all" || solver == "greedy");
@@ -235,6 +238,25 @@ int main(int argc, char** argv) {
     const double elapsed_ms = timer.elapsed_milliseconds();
 
     std::cout << "\n--- Min-Cost Flow EMD-L1 (LEMON CostScaling) ---\n";
+    std::cout << "Distance: " << dist << '\n';
+    std::cout << "Computation time: " << elapsed_ms << " ms\n";
+    if (need_plan) {
+      std::cout << "Transport plan flow entries: " << plan.source.size()
+                << '\n';
+      if (diagnostics) {
+        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
+      }
+    }
+  }
+
+  if (run_mcf_potlemon) {
+    emdgrid::SparseTransportPlan plan;
+    const emdgrid::Timer timer;
+    const double dist = emdgrid::mcf_potlemon_l1(
+        h1, h2, need_plan ? &plan : nullptr);
+    const double elapsed_ms = timer.elapsed_milliseconds();
+
+    std::cout << "\n--- Min-Cost Flow EMD-L1 (POT NetworkSimplex) ---\n";
     std::cout << "Distance: " << dist << '\n';
     std::cout << "Computation time: " << elapsed_ms << " ms\n";
     if (need_plan) {

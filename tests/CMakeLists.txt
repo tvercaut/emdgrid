@@ -15,7 +15,7 @@ else()
 endif()
 set_target_properties(doctest PROPERTIES SYSTEM TRUE CXX_CLANG_TIDY "")
 
-add_executable(emdgrid_tests test_emdgrid.cpp)
+add_executable(emdgrid_tests test_emdgrid.cpp test_mcf_potlemon_l1.cpp)
 target_link_libraries(emdgrid_tests PRIVATE doctest::doctest emdgrid)
 target_compile_definitions(emdgrid_tests PRIVATE EMDGRID_VERSION="${emdgrid_VERSION}")
 
