@@ -177,8 +177,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   enum SupplyType : std::uint8_t { GEQ, LEQ };
 
  private:
-  typedef typename GR::Node Node;
-  typedef typename GR::Arc Arc;
+  typedef GR::Node Node;
+  typedef GR::Arc Arc;
 
   typedef std::vector<int> IntVector;
   typedef std::vector<ArcsType> ArcVector;
