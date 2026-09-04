@@ -1400,7 +1400,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     for (int i = 0; i != _node_num; ++i) {
       _sum_supply += _supply[i];
     }
-    if (std::abs(static_cast<double>(_sum_supply)) > POTLEMON_EPSILON) return false;
+    if (std::abs(static_cast<double>(_sum_supply)) > POTLEMON_EPSILON) {
+      return false;
+    }
 
     _sum_supply = 0;
 
