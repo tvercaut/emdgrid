@@ -392,7 +392,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     k -= num_total_big_subsequence_numbers * smallv;
     ArcsType subsequence_length2 = subsequence_length - smallv;
     ArcsType subsequence_num =
-        (k / subsequence_length2) + num_big_subseqiences * smallv;
+        (k / subsequence_length2) + (num_big_subseqiences * smallv);
     ArcsType subsequence_offset = (k % subsequence_length2) * mixingCoeff;
     return subsequence_offset + subsequence_num;
   }
@@ -442,7 +442,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       Cost max_value = _coords_a[d];
 
       for (int i = 0; i < _n1; ++i) {
-        const Cost value = _coords_a[i * _dim + d];
+        const Cost value = _coords_a[(i * _dim) + d];
         if (value < min_value) {
           min_value = value;
         }
@@ -451,7 +451,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         }
       }
       for (int j = 0; j < _n2; ++j) {
-        const Cost value = _coords_b[j * _dim + d];
+        const Cost value = _coords_b[(j * _dim) + d];
         if (value < min_value) {
           min_value = value;
         }
@@ -752,10 +752,10 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   Cost computeLazyCost(int i, int j_adjusted) const {
     const double* xa =
         _coords_a +
-        static_cast<std::ptrdiff_t>(i) * static_cast<std::ptrdiff_t>(_dim);
+        (static_cast<std::ptrdiff_t>(i) * static_cast<std::ptrdiff_t>(_dim));
     const double* xb =
-        _coords_b + static_cast<std::ptrdiff_t>(j_adjusted) *
-                        static_cast<std::ptrdiff_t>(_dim);
+        _coords_b + (static_cast<std::ptrdiff_t>(j_adjusted) *
+                        static_cast<std::ptrdiff_t>(_dim));
     Cost cost = 0;
 
     if (_metric == 0) {
@@ -894,7 +894,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     _node_num = _init_nb_nodes;
     _arc_num = _init_nb_arcs;
     int all_node_num = _node_num + 1;
-    ArcsType max_arc_num = _arc_num + 2 * _node_num;
+    ArcsType max_arc_num = _arc_num + (2 * _node_num);
     _all_arc_num = max_arc_num;
 
     if (usesArcEndpoints()) {
@@ -952,7 +952,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           static_cast<ArcsType>(std::sqrt(static_cast<double>(_arc_num))),
           static_cast<ArcsType>(10));
       mixingCoeff = k;
-      subsequence_length = _arc_num / mixingCoeff + 1;
+      subsequence_length = (_arc_num / mixingCoeff) + 1;
       num_big_subseqiences = _arc_num % mixingCoeff;
       num_total_big_subsequence_numbers =
           subsequence_length * num_big_subseqiences;
@@ -1059,7 +1059,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         }
       }
       if (std::numeric_limits<Cost>::is_exact) {
-        ART_COST = std::numeric_limits<Cost>::max() / 2 + 1;
+        ART_COST = (std::numeric_limits<Cost>::max() / 2) + 1;
       } else {
         ART_COST = (ART_COST + 1) * _node_num;
       }
@@ -1412,7 +1412,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
     Cost ART_COST;
     if (std::numeric_limits<Cost>::is_exact) {
-      ART_COST = std::numeric_limits<Cost>::max() / 2 + 1;
+      ART_COST = (std::numeric_limits<Cost>::max() / 2) + 1;
     } else {
       Cost max_cost = maxRealArcCost();
       ART_COST = (max_cost + 1) * _node_num;

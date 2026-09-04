@@ -159,7 +159,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   di.buildFromEdges(edges);
 
   using Simplex = potlemon::NetworkSimplexSimple<Digraph, int64_t, int64_t>;
-  typename Simplex::SimplexOptions options(true);
+  Simplex::SimplexOptions options(true);
   Simplex net(di, options, static_cast<int>(n + m),
               static_cast<int64_t>(total_edges), max_iter);
 
