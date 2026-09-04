@@ -1,5 +1,3 @@
-// NOLINTBEGIN
-
 /* -*- mode: C++; indent-tabs-mode: nil; -*-
  *
  *
@@ -42,7 +40,7 @@
 #include <utility>
 #include <vector>
 
-#include "sparse_bipartitegraph.h"
+#include "emdgrid/detail/potlemon/sparse_bipartitegraph.h"
 
 #pragma push_macro("MAX")
 #pragma push_macro("MIN")
@@ -67,6 +65,10 @@
 
 namespace potlemon {
 
+/// Type alias for hash map used in Network Simplex sparse structures.
+template <typename Key, typename Value>
+using HashMap = std::unordered_map<Key, Value>;
+
 template <typename T>
 class ProxyObject;
 
@@ -76,72 +78,80 @@ class SparseValueVector {
   explicit SparseValueVector(size_t n = 0) { (void)n; }
   void resize(size_t n = 0) { (void)n; }
   T operator[](const size_t id) const {
-    typename std::unordered_map<size_t, T>::const_iterator it = data.find(id);
-    if (it == data.end())
+    typename HashMap<size_t, T>::const_iterator it = data.find(id);
+    if (it == data.end()) {
       return 0;
-    else
-      return it->second;
+    }
+    return it->second;
   }
 
   ProxyObject<T> operator[](const size_t id) {
     return ProxyObject<T>(this, id);
   }
 
-  std::unordered_map<size_t, T> data;
+  HashMap<size_t, T> data;
 };
 
 template <typename T>
 class ProxyObject {
  public:
-  ProxyObject(SparseValueVector<T>* v, size_t idx) : _v(v), _idx(idx) {}
+  ProxyObject(SparseValueVector<T>* v, size_t idx) : m_v(v), m_idx(idx) {}
   ProxyObject<T>& operator=(const T& v) {
-    if (v != 0) _v->data[_idx] = v;
+    if (v != 0) {
+      m_v->data[m_idx] = v;
+    }
     return *this;
   }
 
-  operator T() {
-    typename std::unordered_map<size_t, T>::iterator it = _v->data.find(_idx);
-    if (it == _v->data.end())
+  operator T() {  // NOLINT(google-explicit-constructor)
+    typename HashMap<size_t, T>::iterator it = m_v->data.find(m_idx);
+    if (it == m_v->data.end()) {
       return 0;
-    else
-      return it->second;
+    }
+    return it->second;
   }
 
   void operator+=(T val) {
-    if (val == 0) return;
-    typename std::unordered_map<size_t, T>::iterator it = _v->data.find(_idx);
-    if (it == _v->data.end())
-      _v->data[_idx] = val;
-    else {
+    if (val == 0) {
+      return;
+    }
+    typename HashMap<size_t, T>::iterator it = m_v->data.find(m_idx);
+    if (it == m_v->data.end()) {
+      m_v->data[m_idx] = val;
+    } else {
       T sum = it->second + val;
-      if (sum == 0)
-        _v->data.erase(it);
-      else
+      if (sum == 0) {
+        m_v->data.erase(it);
+      } else {
         it->second = sum;
+      }
     }
   }
 
   void operator-=(T val) {
-    if (val == 0) return;
-    typename std::unordered_map<size_t, T>::iterator it = _v->data.find(_idx);
-    if (it == _v->data.end())
-      _v->data[_idx] = -val;
-    else {
+    if (val == 0) {
+      return;
+    }
+    typename HashMap<size_t, T>::iterator it = m_v->data.find(m_idx);
+    if (it == m_v->data.end()) {
+      m_v->data[m_idx] = -val;
+    } else {
       T sum = it->second - val;
-      if (sum == 0)
-        _v->data.erase(it);
-      else
+      if (sum == 0) {
+        m_v->data.erase(it);
+      } else {
         it->second = sum;
+      }
     }
   }
 
-  SparseValueVector<T>* _v;
-  size_t _idx;
+  SparseValueVector<T>* m_v;
+  size_t m_idx;
 };
 
 template <typename GR, typename V = int64_t, typename C = V,
-          typename NodesType = unsigned short int, typename ArcsType = int64_t>
-class NetworkSimplexSimple {
+          typename NodesType = uint16_t, typename ArcsType = int64_t>
+class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
  public:
   enum class CostMode { StoredArray, DenseMatrix, LazyGeometry };
 
@@ -309,7 +319,7 @@ class NetworkSimplexSimple {
   int _D_n2;
 
  private:
-  std::unordered_map<ArcsType, Value> _real_flow;
+  HashMap<ArcsType, Value> _real_flow;
 
   bool _warmstart_provided;
   bool _warmstart_tree_built;
@@ -516,7 +526,7 @@ class NetworkSimplexSimple {
   inline Value arcFlow(ArcsType arc_id) const {
     if (storesSparseArcFlows()) {
       if (arc_id < _arc_num) {
-        typename std::unordered_map<ArcsType, Value>::const_iterator it =
+        typename HashMap<ArcsType, Value>::const_iterator it =
             _real_flow.find(arc_id);
         return it == _real_flow.end() ? Value(0) : it->second;
       }
@@ -572,7 +582,9 @@ class NetworkSimplexSimple {
       const double BLOCK_SIZE_FACTOR = 1.0;
       const ArcsType MIN_BLOCK_SIZE = 10;
       _block_size = std::max(
-          ArcsType(BLOCK_SIZE_FACTOR * std::sqrt(double(_search_arc_num))),
+          static_cast<ArcsType>(BLOCK_SIZE_FACTOR *
+                                std::sqrt(static_cast<double>(
+                                    _search_arc_num))),
           MIN_BLOCK_SIZE);
     }
 
@@ -870,8 +882,9 @@ class NetworkSimplexSimple {
 
     if (usesArcEndpoints()) {
     } else if (_arc_mixing) {
-      const ArcsType k =
-          std::max(ArcsType(std::sqrt(double(_arc_num))), ArcsType(10));
+      const ArcsType k = std::max(
+          static_cast<ArcsType>(std::sqrt(static_cast<double>(_arc_num))),
+          static_cast<ArcsType>(10));
       mixingCoeff = k;
       subsequence_length = _arc_num / mixingCoeff + 1;
       num_big_subseqiences = _arc_num % mixingCoeff;
@@ -1481,14 +1494,15 @@ class NetworkSimplexSimple {
   }
 
   void updateTreeStructure() {
-    int u, w;
+    int u = 0;
+    int w = 0;
     int old_rev_thread = _rev_thread[u_out];
     int old_succ_num = _succ_num[u_out];
     int old_last_succ = _last_succ[u_out];
     v_out = static_cast<ArcsType>(_parent[u_out]);
 
     u = _last_succ[u_in];
-    right = static_cast<ArcsType>(_thread[u]);
+    right = static_cast<ArcsType>(_thread[static_cast<std::size_t>(u)]);
 
     if (old_rev_thread == static_cast<int>(v_in)) {
       last = static_cast<ArcsType>(_thread[_last_succ[u_out]]);
@@ -1527,12 +1541,13 @@ class NetworkSimplexSimple {
       _rev_thread[right] = old_rev_thread;
     }
 
-    for (int i = 0; i != int(_dirty_revs.size()); ++i) {
+    for (std::size_t i = 0; i != _dirty_revs.size(); ++i) {
       int u_idx = _dirty_revs[i];
       _rev_thread[_thread[u_idx]] = u_idx;
     }
 
-    int tmp_sc = 0, tmp_ls = _last_succ[u_out];
+    int tmp_sc = 0;
+    int tmp_ls = _last_succ[u_out];
     u = static_cast<int>(u_out);
     while (u != static_cast<int>(u_in)) {
       w = _parent[u];
@@ -1627,11 +1642,13 @@ class NetworkSimplexSimple {
           Arc a;
           _graph.firstIn(a, v_curr);
           for (; a != INVALID; _graph.nextIn(a)) {
-            if (reached[u_curr = _graph.source(a)]) continue;
+            u_curr = _graph.source(a);
+            if (u_curr < 0 || u_curr >= static_cast<Node>(_node_num)) continue;
+            if (reached[static_cast<std::size_t>(u_curr)]) continue;
             ArcsType j = getArcID(a);
             if (INF >= total) {
               arc_vector.push_back(j);
-              reached[u_curr] = true;
+              reached[static_cast<std::size_t>(u_curr)] = 1;
               stack.push_back(u_curr);
             }
           }
@@ -1701,7 +1718,9 @@ class NetworkSimplexSimple {
     ProblemType retVal = OPTIMAL;
 
     if (!_warmstart_tree_built) {
-      if (!initialPivots()) return UNBOUNDED;
+      if (!initialPivots()) {
+        return UNBOUNDED;
+      }
     }
 
     uint64_t iter_number = 0;
@@ -1713,7 +1732,9 @@ class NetworkSimplexSimple {
 
       findJoinNode();
       bool change = findLeavingArc();
-      if (delta >= MAX) return UNBOUNDED;
+      if (delta >= MAX) {
+        return UNBOUNDED;
+      }
       changeFlow(change);
       if (change) {
         updateTreeStructure();
@@ -1724,10 +1745,10 @@ class NetworkSimplexSimple {
     if (retVal == OPTIMAL) {
       for (ArcsType e = _search_arc_num; e != _all_arc_num; ++e) {
         if (arcFlow(e) != 0) {
-          if (std::abs(static_cast<double>(arcFlow(e))) > _EPSILON)
+          if (std::abs(static_cast<double>(arcFlow(e))) > _EPSILON) {
             return INFEASIBLE;
-          else
-            setArcFlow(e, 0);
+          }
+          setArcFlow(e, 0);
         }
       }
     }
@@ -1736,18 +1757,26 @@ class NetworkSimplexSimple {
       if (_stype == GEQ) {
         Cost max_pot = -std::numeric_limits<Cost>::max();
         for (ArcsType i = 0; i != _node_num; ++i) {
-          if (_pi[i] > max_pot) max_pot = _pi[i];
+          if (_pi[i] > max_pot) {
+            max_pot = _pi[i];
+          }
         }
         if (max_pot > 0) {
-          for (ArcsType i = 0; i != _node_num; ++i) _pi[i] -= max_pot;
+          for (ArcsType i = 0; i != _node_num; ++i) {
+            _pi[i] -= max_pot;
+          }
         }
       } else {
         Cost min_pot = std::numeric_limits<Cost>::max();
         for (ArcsType i = 0; i != _node_num; ++i) {
-          if (_pi[i] < min_pot) min_pot = _pi[i];
+          if (_pi[i] < min_pot) {
+            min_pot = _pi[i];
+          }
         }
         if (min_pot < 0) {
-          for (ArcsType i = 0; i != _node_num; ++i) _pi[i] -= min_pot;
+          for (ArcsType i = 0; i != _node_num; ++i) {
+            _pi[i] -= min_pot;
+          }
         }
       }
     }
@@ -1762,5 +1791,3 @@ class NetworkSimplexSimple {
 #pragma pop_macro("INVALID")
 #pragma pop_macro("MIN")
 #pragma pop_macro("MAX")
-
-// NOLINTEND
