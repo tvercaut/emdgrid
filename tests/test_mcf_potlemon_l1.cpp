@@ -56,7 +56,7 @@ TEST_CASE("mcf_potlemon_l1 3D: diagonal shift costs 3") {
   CHECK(dist == doctest::Approx(3.0).epsilon(1e-6));
 }
 
-TEST_CASE("mcf_potlemon_l1 3D: matches emd_l1, mcf_l1, and mcf_lemon_l1 on random histograms") {
+TEST_CASE("mcf_potlemon_l1 3D: matches emd_l1/mcf_l1/mcf_lemon_l1 on random") {
   const emdgrid::GridLayout<3> layout({4, 4, 4});
   const std::size_t n = layout.node_count();
 
@@ -78,7 +78,7 @@ TEST_CASE("mcf_potlemon_l1 3D: matches emd_l1, mcf_l1, and mcf_lemon_l1 on rando
   CHECK(potlemon_dist == doctest::Approx(lemon_dist).epsilon(1e-4));
 }
 
-TEST_CASE("mcf_potlemon_l1 2D: transport plan computation and cost reconstruction") {
+TEST_CASE("mcf_potlemon_l1 2D: transport plan and cost reconstruction") {
   const emdgrid::GridLayout<2> layout({3, 3});
   const std::size_t n = layout.node_count();
 

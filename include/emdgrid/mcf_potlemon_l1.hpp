@@ -141,14 +141,15 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   for (std::size_t i = 0; i < n; ++i) {
     const auto src_bin = sources[i].bin_idx;
-    const auto c_src = layout.coordinates(static_cast<std::ptrdiff_t>(src_bin));
+    const auto c_src =
+        layout.coordinates(static_cast<std::ptrdiff_t>(src_bin));
     for (std::size_t j = 0; j < m; ++j) {
       const auto tgt_bin = targets[j].bin_idx;
       const auto c_tgt =
           layout.coordinates(static_cast<std::ptrdiff_t>(tgt_bin));
       int64_t dist = 0;
-      for (std::size_t a = 0; a < Dim; ++a) {
-        dist += std::abs(c_src[a] - c_tgt[a]);
+      for (std::size_t axis = 0; axis < Dim; ++axis) {
+        dist += std::abs(c_src[axis] - c_tgt[axis]);
       }
       edges.emplace_back(static_cast<int>(i), static_cast<int>(j + n));
       arc_costs.push_back(dist);
@@ -172,11 +173,11 @@ template <std::size_t Dim, std::floating_point Scalar,
     tgt_demands[j] = targets[j].supply;
   }
 
-  net.supplyMap(&src_supplies[0], static_cast<int>(n), &tgt_demands[0],
+  net.supplyMap(src_supplies.data(), static_cast<int>(n), tgt_demands.data(),
                 static_cast<int>(m));
 
   for (int64_t k = 0; k < static_cast<int64_t>(total_edges); ++k) {
-    net.setCost(di.arcFromId(k), arc_costs[k]);
+    net.setCost(Digraph::arcFromId(k), arc_costs[k]);
   }
 
   const auto status = net.run();
@@ -190,15 +191,15 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   if (plan) {
     for (int64_t k = 0; k < static_cast<int64_t>(total_edges); ++k) {
-      const Digraph::Arc a = di.arcFromId(k);
+      const Digraph::Arc a = Digraph::arcFromId(k);
       const int64_t f = net.flow(a);
       if (f > 0) {
         const int src_idx = di.source(a);
         const int tgt_idx = di.target(a) - static_cast<int>(n);
-        plan->source.push_back(
-            static_cast<uint32_t>(sources[static_cast<std::size_t>(src_idx)].bin_idx));
-        plan->target.push_back(
-            static_cast<uint32_t>(targets[static_cast<std::size_t>(tgt_idx)].bin_idx));
+        plan->source.push_back(static_cast<uint32_t>(
+            sources[static_cast<std::size_t>(src_idx)].bin_idx));
+        plan->target.push_back(static_cast<uint32_t>(
+            targets[static_cast<std::size_t>(tgt_idx)].bin_idx));
         plan->flow.push_back(static_cast<double>(f) / scale);
       }
     }

@@ -1,7 +1,30 @@
+// NOLINTBEGIN
+
 /* -*- mode: C++; indent-tabs-mode: nil; -*-
  *
- * Adapted from PythonOT (POT) network_simplex_simple.h
- * for emdgrid under potlemon namespace.
+ *
+ * This file has been adapted by Nicolas Bonneel (2013),
+ * from network_simplex.h from LEMON, a generic C++ optimization library,
+ * to implement a lightweight network simplex for mass transport, more
+ * memory efficient that the original file. A previous version of this file
+ * is used as part of the Displacement Interpolation project,
+ * Web: http://www.cs.ubc.ca/labs/imager/tr/2011/DisplacementInterpolation/
+ *
+ *
+ **** Original file Copyright Notice :
+ *
+ * Copyright (C) 2003-2010
+ * Egervary Jeno Kombinatorikus Optimalizalasi Kutatocsoport
+ * (Egervary Research Group on Combinatorial Optimization, EGRES).
+ *
+ * Permission to use, modify and distribute this software is granted
+ * provided that this copyright notice appears in all copies. For
+ * precise terms see the accompanying LICENSE file.
+ *
+ * This software is provided "AS IS" with no warranty of any kind,
+ * express or implied, and with no claim as to its suitability for any
+ * purpose.
+ *
  */
 
 #pragma once
@@ -13,8 +36,8 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <queue>
+#include <unordered_map>
 #include <stack>
 #include <utility>
 #include <vector>
@@ -53,7 +76,7 @@ class SparseValueVector {
   explicit SparseValueVector(size_t n = 0) { (void)n; }
   void resize(size_t n = 0) { (void)n; }
   T operator[](const size_t id) const {
-    typename std::map<size_t, T>::const_iterator it = data.find(id);
+    typename std::unordered_map<size_t, T>::const_iterator it = data.find(id);
     if (it == data.end())
       return 0;
     else
@@ -64,7 +87,7 @@ class SparseValueVector {
     return ProxyObject<T>(this, id);
   }
 
-  std::map<size_t, T> data;
+  std::unordered_map<size_t, T> data;
 };
 
 template <typename T>
@@ -77,7 +100,7 @@ class ProxyObject {
   }
 
   operator T() {
-    typename std::map<size_t, T>::iterator it = _v->data.find(_idx);
+    typename std::unordered_map<size_t, T>::iterator it = _v->data.find(_idx);
     if (it == _v->data.end())
       return 0;
     else
@@ -86,7 +109,7 @@ class ProxyObject {
 
   void operator+=(T val) {
     if (val == 0) return;
-    typename std::map<size_t, T>::iterator it = _v->data.find(_idx);
+    typename std::unordered_map<size_t, T>::iterator it = _v->data.find(_idx);
     if (it == _v->data.end())
       _v->data[_idx] = val;
     else {
@@ -100,7 +123,7 @@ class ProxyObject {
 
   void operator-=(T val) {
     if (val == 0) return;
-    typename std::map<size_t, T>::iterator it = _v->data.find(_idx);
+    typename std::unordered_map<size_t, T>::iterator it = _v->data.find(_idx);
     if (it == _v->data.end())
       _v->data[_idx] = -val;
     else {
@@ -286,7 +309,7 @@ class NetworkSimplexSimple {
   int _D_n2;
 
  private:
-  std::map<ArcsType, Value> _real_flow;
+  std::unordered_map<ArcsType, Value> _real_flow;
 
   bool _warmstart_provided;
   bool _warmstart_tree_built;
@@ -493,7 +516,7 @@ class NetworkSimplexSimple {
   inline Value arcFlow(ArcsType arc_id) const {
     if (storesSparseArcFlows()) {
       if (arc_id < _arc_num) {
-        typename std::map<ArcsType, Value>::const_iterator it =
+        typename std::unordered_map<ArcsType, Value>::const_iterator it =
             _real_flow.find(arc_id);
         return it == _real_flow.end() ? Value(0) : it->second;
       }
@@ -1739,3 +1762,5 @@ class NetworkSimplexSimple {
 #pragma pop_macro("INVALID")
 #pragma pop_macro("MIN")
 #pragma pop_macro("MAX")
+
+// NOLINTEND

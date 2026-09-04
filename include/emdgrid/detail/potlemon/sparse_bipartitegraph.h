@@ -1,6 +1,14 @@
+// NOLINTBEGIN
+
 /* -*- mode: C++; indent-tabs-mode: nil; -*-
+ *
  * Sparse bipartite graph for optimal transport
- * Adapted for emdgrid under potlemon namespace.
+ * Only stores edges that are explicitly added (not all n1×n2 edges)
+ *
+ * Uses CSR (Compressed Sparse Row) format for better cache locality and performance
+ * - Binary search for arc lookup: O(log k) where k = avg edges per node
+ * - Compact memory layout for better cache performance
+ * - Requires edges to be provided in sorted order during construction
  */
 
 #pragma once
@@ -299,3 +307,5 @@ class SparseBipartiteDigraph : public SparseBipartiteDigraphBase {
 };
 
 }  // namespace potlemon
+
+// NOLINTEND
