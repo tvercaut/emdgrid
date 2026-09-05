@@ -12,6 +12,7 @@
 #include "emdgrid/knothe_rosenblatt.hpp"
 #include "emdgrid/mcf_l1.hpp"
 #include "emdgrid/mcf_lemon_l1.hpp"
+#include "emdgrid/mcf_potlemon_l1.hpp"
 #include "emdgrid/utils.hpp"
 #include "emdgrid/version.hpp"
 
@@ -426,6 +427,76 @@ TEST_CASE("mcf_lemon_l1 3D: matches emd_l1 and mcf_l1 on random histograms") {
 
   CHECK(dist_lemon_ns == doctest::Approx(dist_emd).epsilon(1e-4));
   CHECK(dist_lemon_cs == doctest::Approx(dist_emd).epsilon(1e-4));
+}
+
+TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
+  constexpr std::size_t dim = 10;
+  const emdgrid::GridLayout<3> layout({dim, dim, dim});
+  const std::size_t n_bins = layout.node_count();
+
+  const std::vector<double> h1_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 42);
+  const std::vector<double> h2_data =
+      emdgrid::generate_random_histogram<double>(n_bins, 1337);
+
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+  auto check_plan_sum = [&](const emdgrid::SparseTransportPlan& plan) {
+    double total_flow = 0.0;
+    for (const double f : plan.flow) {
+      total_flow += f;
+    }
+    CHECK(std::abs(total_flow - 1.0) < 1e-5);
+  };
+
+  {
+    emdgrid::SparseTransportPlan plan;
+    const double cost = emdgrid::mcf_lemon_l1(
+        h1, h2, emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
+    CHECK(cost > 0.0);
+    check_plan_sum(plan);
+  }
+
+  {
+    emdgrid::SparseTransportPlan plan;
+    const double cost = emdgrid::mcf_lemon_l1(
+        h1, h2, emdgrid::McfLemonAlgorithm::CostScaling, &plan);
+    CHECK(cost > 0.0);
+    check_plan_sum(plan);
+  }
+
+  {
+    emdgrid::SparseTransportPlan plan;
+    const double cost = emdgrid::mcf_l1(h1, h2, &plan);
+    CHECK(cost > 0.0);
+    check_plan_sum(plan);
+  }
+
+  {
+    emdgrid::SparseTransportPlan plan;
+    const double cost = emdgrid::mcf_dpartion(
+        h1, h2, emdgrid::GroundMetric::L1,
+        emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
+    CHECK(cost > 0.0);
+    check_plan_sum(plan);
+  }
+
+  {
+    emdgrid::SparseTransportPlan plan;
+    const double cost = emdgrid::mcf_dpartion(
+        h1, h2, emdgrid::GroundMetric::SqEuclidean,
+        emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
+    CHECK(cost > 0.0);
+    check_plan_sum(plan);
+  }
+
+  {
+    emdgrid::SparseTransportPlan plan;
+    const double cost = emdgrid::mcf_potlemon_l1(h1, h2, &plan);
+    CHECK(cost > 0.0);
+    check_plan_sum(plan);
+  }
 }
 
 TEST_CASE(

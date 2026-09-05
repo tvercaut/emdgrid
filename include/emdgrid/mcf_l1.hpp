@@ -107,16 +107,20 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
 
   std::vector<int64_t> supply(n_nodes);
-  int64_t total_supply_sum = 0;
   std::size_t max_abs_idx = 0;
   int64_t max_abs_val = -1;
+
+  double cum_target = 0.0;
+  int64_t cum_scaled_prev = 0;
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const double diff = static_cast<double>(h1.data()[i]) -
                         static_cast<double>(h2.data()[i]);
-    const int64_t s = std::llround(diff * scale);
+    cum_target += diff;
+    const int64_t cum_scaled = std::llround(cum_target * scale);
+    const int64_t s = cum_scaled - cum_scaled_prev;
     supply[i] = s;
-    total_supply_sum += s;
+    cum_scaled_prev = cum_scaled;
 
     const int64_t abs_s = std::abs(s);
     if (abs_s > max_abs_val) {
@@ -126,8 +130,8 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
 
   // Fix rounding drift so total supply sums to exactly 0
-  if (total_supply_sum != 0) {
-    supply[max_abs_idx] -= total_supply_sum;
+  if (cum_scaled_prev != 0) {
+    supply[max_abs_idx] -= cum_scaled_prev;
   }
 
   int64_t total_pos_supply = 0;

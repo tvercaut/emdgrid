@@ -83,6 +83,9 @@ template <std::size_t Dim, std::floating_point Scalar,
   std::size_t max_tgt_idx = 0;
   int64_t max_tgt_val = -1;
 
+  double cum_target = 0.0;
+  int64_t cum_scaled_prev = 0;
+
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const double v1 = static_cast<double>(h1.data()[i]);
     const double v2 = static_cast<double>(h2.data()[i]);
@@ -95,7 +98,10 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
 
     const double diff = (v1 - self_mass) - (v2 - self_mass);
-    const int64_t s = std::llround(diff * scale);
+    cum_target += diff;
+    const int64_t cum_scaled = std::llround(cum_target * scale);
+    const int64_t s = cum_scaled - cum_scaled_prev;
+    cum_scaled_prev = cum_scaled;
 
     if (s > 0) {
       sources.push_back({i, s});
