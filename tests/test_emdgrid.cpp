@@ -428,7 +428,7 @@ TEST_CASE("mcf_lemon_l1 3D: matches emd_l1 and mcf_l1 on random histograms") {
   CHECK(dist_lemon_cs == doctest::Approx(dist_emd).epsilon(1e-4));
 }
 
-TEST_CASE("mcf_lemon_l1 3D: transport plan total sum on random 10x10x10 histograms") {
+TEST_CASE("mcf_lemon_l1 3D: plan total sum on 10x10x10 histograms") {
   constexpr std::size_t dim = 10;
   const emdgrid::GridLayout<3> layout({dim, dim, dim});
   const std::size_t n_bins = layout.node_count();
