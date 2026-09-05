@@ -134,16 +134,20 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
 
   std::vector<int64_t> supply(n_nodes);
-  int64_t total_supply_sum = 0;
   std::size_t max_abs_idx = 0;
   int64_t max_abs_val = -1;
+
+  double cum_target = 0.0;
+  int64_t cum_scaled_prev = 0;
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const double diff = static_cast<double>(h1.data()[i]) -
                         static_cast<double>(h2.data()[i]);
-    const int64_t s = std::llround(diff * scale);
+    cum_target += diff;
+    const int64_t cum_scaled = std::llround(cum_target * scale);
+    const int64_t s = cum_scaled - cum_scaled_prev;
     supply[i] = s;
-    total_supply_sum += s;
+    cum_scaled_prev = cum_scaled;
 
     const int64_t abs_s = std::abs(s);
     if (abs_s > max_abs_val) {
@@ -153,8 +157,8 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
 
   // Fix rounding drift so total supply sums to exactly 0
-  if (total_supply_sum != 0) {
-    supply[max_abs_idx] -= total_supply_sum;
+  if (cum_scaled_prev != 0) {
+    supply[max_abs_idx] -= cum_scaled_prev;
   }
 
   int64_t total_pos_supply = 0;
@@ -365,24 +369,33 @@ template <std::size_t Dim, std::floating_point Scalar,
   const std::size_t layer_dim_offset = Dim * n_nodes;
 
   std::vector<int64_t> supply(total_nodes, 0);
-  int64_t total_supply_sum = 0;
   std::size_t max_abs_idx = 0;
   int64_t max_abs_val = -1;
 
   constexpr bool do_extract_self_mass =
       detail::should_extract_self_mass_v<CostFn>;
 
+  double cum_target1 = 0.0;
+  int64_t cum_scaled_prev1 = 0;
+  double cum_target2 = 0.0;
+  int64_t cum_scaled_prev2 = 0;
+
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const double v1 = static_cast<double>(h1.data()[i]);
     const double v2 = static_cast<double>(h2.data()[i]);
     const double self_mass = do_extract_self_mass ? std::min(v1, v2) : 0.0;
 
-    const int64_t s1 = std::llround((v1 - self_mass) * scale);
-    const int64_t s2 = -std::llround((v2 - self_mass) * scale);
+    cum_target1 += v1 - self_mass;
+    const int64_t cum_scaled1 = std::llround(cum_target1 * scale);
+    const int64_t s1 = cum_scaled1 - cum_scaled_prev1;
+    cum_scaled_prev1 = cum_scaled1;
+
+    cum_target2 += v2 - self_mass;
+    const int64_t cum_scaled2 = std::llround(cum_target2 * scale);
+    const int64_t s2 = -(cum_scaled2 - cum_scaled_prev2);
+    cum_scaled_prev2 = cum_scaled2;
 
     supply[i] = s1;
-    total_supply_sum += s1;
-
     const int64_t abs_s1 = std::abs(s1);
     if (abs_s1 > max_abs_val) {
       max_abs_val = abs_s1;
@@ -390,8 +403,6 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
 
     supply[layer_dim_offset + i] = s2;
-    total_supply_sum += s2;
-
     const int64_t abs_s2 = std::abs(s2);
     if (abs_s2 > max_abs_val) {
       max_abs_val = abs_s2;
@@ -399,6 +410,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
 
+  const int64_t total_supply_sum = cum_scaled_prev1 - cum_scaled_prev2;
   if (total_supply_sum != 0) {
     supply[max_abs_idx] -= total_supply_sum;
   }
