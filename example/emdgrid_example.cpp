@@ -111,7 +111,8 @@ int main(int argc, char** argv) {
   app.add_option("-s,--solver", solver,
                  "Solver to run: 'emd_l1', 'mcf_l1', 'mcf_lemon_ns', "
                  "'mcf_lemon_cs', 'mcf_potlemon', 'dpartion', 'opencv_emd', "
-                 "'greedy', 'kr', or 'all' (default: 'all')");
+                 "'greedy', 'kr', 'all' (default, excludes opencv_emd), or "
+                 "'all_extended' (includes opencv_emd; slow on large grids)");
   app.add_option("-m,--metric", kr_metric_str,
                  "Knothe-Rosenblatt metric: 'l1' or 'sqeuclidean' "
                  "(default: 'l1')");
@@ -166,8 +167,8 @@ int main(int argc, char** argv) {
                                   solver == "potlemon");
   const bool run_dpartion = (solver == "all" || solver == "dpartion" ||
                              solver == "mcf_dpartion");
-  const bool run_opencv_emd = (solver == "all" || solver == "opencv_emd" ||
-                               solver == "opencv");
+  const bool run_opencv_emd = (solver == "all_extended" ||
+                               solver == "opencv_emd" || solver == "opencv");
   const bool run_greedy = (solver == "all" || solver == "greedy");
   const bool run_kr = (solver == "all" || solver == "kr" ||
                        solver == "knothe_rosenblatt");

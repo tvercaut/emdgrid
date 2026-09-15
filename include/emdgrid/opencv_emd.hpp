@@ -413,8 +413,16 @@ struct EmdSolver {
 /// (Rubner 1998, adapted from OpenCV's emd_new.cpp).
 ///
 /// Constructs the full pairwise cost matrix between all non-zero bins and
-/// solves the resulting transportation problem with a primal simplex. Suitable
-/// for small to medium histograms and arbitrary ground metrics.
+/// solves the resulting transportation problem with a primal simplex.
+///
+/// **Complexity warning**: time and memory are O(n²) in the number of
+/// non-zero bins n (one entry per source-destination pair). Each simplex
+/// iteration scans all ~n² non-basic arcs, and the number of iterations
+/// can grow with n. In practice this limits practical use to histograms
+/// with at most a few hundred non-zero bins (e.g. grids up to ~8×8×8).
+/// For larger grids prefer the grid-aware solvers (emd_l1, mcf_dpartion,
+/// mcf_potlemon), which exploit the regular structure and run in
+/// sub-quadratic time.
 ///
 /// @tparam Dim        Grid dimensionality (>= 1).
 /// @tparam Scalar     Input histogram scalar type.
@@ -508,7 +516,8 @@ template <std::size_t Dim, std::floating_point Scalar, typename CostFn,
   return static_cast<CompScalar>(raw);
 }
 
-/// Overload with `GroundMetric` enum (L1 or SqEuclidean).
+/// Overload with `GroundMetric` enum (L1 or SqEuclidean). See the primary
+/// overload for complexity constraints.
 template <std::size_t Dim, std::floating_point Scalar,
           std::floating_point CompScalar = double>
   requires(Dim >= 1)
