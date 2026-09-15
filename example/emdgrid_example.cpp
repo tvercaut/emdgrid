@@ -17,6 +17,7 @@
 #include "emdgrid/mcf_l1.hpp"
 #include "emdgrid/mcf_lemon_l1.hpp"
 #include "emdgrid/mcf_potlemon_l1.hpp"
+#include "emdgrid/opencv_emd.hpp"
 #include "emdgrid/utils.hpp"
 
 template <std::size_t Dim>
@@ -109,8 +110,8 @@ int main(int argc, char** argv) {
                "Run plan diagnostics (forces transport plan calculation)");
   app.add_option("-s,--solver", solver,
                  "Solver to run: 'emd_l1', 'mcf_l1', 'mcf_lemon_ns', "
-                 "'mcf_lemon_cs', 'mcf_potlemon', 'dpartion', 'greedy', "
-                 "'kr', or 'all' (default: 'all')");
+                 "'mcf_lemon_cs', 'mcf_potlemon', 'dpartion', 'opencv_emd', "
+                 "'greedy', 'kr', or 'all' (default: 'all')");
   app.add_option("-m,--metric", kr_metric_str,
                  "Knothe-Rosenblatt metric: 'l1' or 'sqeuclidean' "
                  "(default: 'l1')");
@@ -165,6 +166,8 @@ int main(int argc, char** argv) {
                                   solver == "potlemon");
   const bool run_dpartion = (solver == "all" || solver == "dpartion" ||
                              solver == "mcf_dpartion");
+  const bool run_opencv_emd = (solver == "all" || solver == "opencv_emd" ||
+                               solver == "opencv");
   const bool run_greedy = (solver == "all" || solver == "greedy");
   const bool run_kr = (solver == "all" || solver == "kr" ||
                        solver == "knothe_rosenblatt");
@@ -302,6 +305,24 @@ int main(int argc, char** argv) {
         if (diagnostics) {
           run_diagnostics(layout, h1, h2, plan, metric, dist);
         }
+      }
+    }
+  }
+
+  if (run_opencv_emd) {
+    emdgrid::SparseTransportPlan plan;
+    const emdgrid::Timer timer;
+    const double dist = emdgrid::opencv_emd(
+        h1, h2, emdgrid::GroundMetric::L1, need_plan ? &plan : nullptr);
+    const double elapsed_ms = timer.elapsed_milliseconds();
+
+    std::cout << "\n--- OpenCV EMD (Rubner transportation simplex, L1) ---\n";
+    std::cout << "Distance: " << dist << '\n';
+    std::cout << "Computation time: " << elapsed_ms << " ms\n";
+    if (need_plan) {
+      std::cout << "Transport plan flow entries: " << plan.source.size() << '\n';
+      if (diagnostics) {
+        run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
       }
     }
   }

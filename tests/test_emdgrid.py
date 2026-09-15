@@ -557,3 +557,86 @@ class TestEmdSqeuclidean1dVsPot:
         cost_pot = ot.emd2(h1, h2, M.astype(np.float64))
 
         assert cost_our == pytest.approx(cost_pot, rel=1e-5, abs=1e-8)
+
+
+class TestOpencvEmdBinding:
+    """Basic correctness tests for pyemdgrid.opencv_emd."""
+
+    def test_identical_histograms_give_zero(self):
+        h = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+        assert pyemdgrid.opencv_emd(h, h) == pytest.approx(0.0, abs=1e-5)
+
+    def test_1d_unit_shift_l1(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 1.0, 0.0])
+        assert pyemdgrid.opencv_emd(h1, h2) == pytest.approx(1.0, rel=1e-5)
+
+    def test_1d_two_bin_shift_sqeuclidean(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 1.0])
+        assert pyemdgrid.opencv_emd(h1, h2, metric="sqeuclidean") == pytest.approx(
+            4.0, rel=1e-5
+        )
+
+    def test_2d_diagonal_shift_l1(self):
+        h1 = np.array([[1.0, 0.0], [0.0, 0.0]])
+        h2 = np.array([[0.0, 0.0], [0.0, 1.0]])
+        assert pyemdgrid.opencv_emd(h1, h2) == pytest.approx(2.0, rel=1e-5)
+
+    def test_return_transport_plan(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 1.0, 0.0])
+        result = pyemdgrid.opencv_emd(h1, h2, return_transport_plan=True)
+        assert isinstance(result, tuple)
+        cost, plan = result
+        assert cost == pytest.approx(1.0, rel=1e-5)
+
+    def test_symmetry(self):
+        h1 = np.array([0.5, 0.5, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 0.5, 0.5])
+        assert pyemdgrid.opencv_emd(h1, h2) == pytest.approx(
+            pyemdgrid.opencv_emd(h2, h1), rel=1e-5
+        )
+
+    def test_ground_metric_enum(self):
+        h1 = np.array([1.0, 0.0, 0.0])
+        h2 = np.array([0.0, 0.0, 1.0])
+        cost_str = pyemdgrid.opencv_emd(h1, h2, metric="l1")
+        cost_enum = pyemdgrid.opencv_emd(
+            h1, h2, metric=pyemdgrid.GroundMetric.L1
+        )
+        assert cost_str == pytest.approx(cost_enum, rel=1e-8)
+
+
+class TestOpencvEmdVsPot:
+    """Cross-validate pyemdgrid.opencv_emd against POT's ot.emd2."""
+
+    @pytest.fixture()
+    def rng(self):
+        return np.random.default_rng(42)
+
+    def _make_histograms(self, rng, shape):
+        size = int(np.prod(shape))
+        h1 = scipy.special.softmax(rng.standard_normal(size)).reshape(shape)
+        h2 = scipy.special.softmax(rng.standard_normal(size)).reshape(shape)
+        return h1.copy(), h2.copy()
+
+    @pytest.mark.parametrize("shape", [(5,), (4, 4), (3, 3, 3)])
+    def test_l1_agrees_with_pot(self, rng, shape):
+        h1, h2 = self._make_histograms(rng, shape)
+        cost_ocv = pyemdgrid.opencv_emd(h1, h2, metric="l1")
+        cost_pot = _emd_l1_via_pot(h1, h2)
+        assert cost_ocv == pytest.approx(cost_pot, rel=1e-3, abs=1e-6)
+
+    @pytest.mark.parametrize("shape", [(3, 4), (3, 3, 3)])
+    def test_sqeuclidean_agrees_with_pot(self, rng, shape):
+        h1, h2 = self._make_histograms(rng, shape)
+        cost_ocv = pyemdgrid.opencv_emd(h1, h2, metric="sqeuclidean")
+
+        ndim = len(shape)
+        axes = [np.arange(s) for s in shape]
+        coords = np.array(np.meshgrid(*axes, indexing="ij")).reshape(ndim, -1).T
+        diffs = coords[:, None, :] - coords[None, :, :]
+        M = np.sum(diffs**2, axis=-1).astype(np.float64)
+        cost_pot = ot.emd2(h1.ravel(), h2.ravel(), M)
+        assert cost_ocv == pytest.approx(cost_pot, rel=1e-3, abs=1e-6)
