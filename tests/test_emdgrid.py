@@ -602,9 +602,7 @@ class TestOpencvEmdBinding:
         h1 = np.array([1.0, 0.0, 0.0])
         h2 = np.array([0.0, 0.0, 1.0])
         cost_str = pyemdgrid.opencv_emd(h1, h2, metric="l1")
-        cost_enum = pyemdgrid.opencv_emd(
-            h1, h2, metric=pyemdgrid.GroundMetric.L1
-        )
+        cost_enum = pyemdgrid.opencv_emd(h1, h2, metric=pyemdgrid.GroundMetric.L1)
         assert cost_str == pytest.approx(cost_enum, rel=1e-8)
 
 

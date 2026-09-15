@@ -123,8 +123,12 @@ struct EmdSolver {
 
     float s_sum = 0.F;
     float d_sum = 0.F;
-    for (float w : sig1) { s_sum += w; }
-    for (float w : sig2) { d_sum += w; }
+    for (float w : sig1) {
+      s_sum += w;
+    }
+    for (float w : sig2) {
+      d_sum += w;
+    }
 
     std::vector<float> s(sig1.begin(), sig1.end());
     std::vector<float> d(sig2.begin(), sig2.end());
@@ -194,14 +198,24 @@ struct EmdSolver {
       int mi = -1;
       int mj = -1;
       for (int i = 0; i < ssize; ++i) {
-        if (s[i] <= 0.F) { continue; }
+        if (s[i] <= 0.F) {
+          continue;
+        }
         for (int j = 0; j < dsize; ++j) {
-          if (d[j] <= 0.F) { continue; }
+          if (d[j] <= 0.F) {
+            continue;
+          }
           const float delta = cost(i, j) - row_max[i] - col_max[j];
-          if (delta < min_d) { min_d = delta; mi = i; mj = j; }
+          if (delta < min_d) {
+            min_d = delta;
+            mi = i;
+            mj = j;
+          }
         }
       }
-      if (mi < 0) { break; }
+      if (mi < 0) {
+        break;
+      }
 
       const float flow = std::min(s[mi], d[mj]);
       s[mi] -= flow;
@@ -225,7 +239,9 @@ struct EmdSolver {
   void run_simplex() {
     for (int iter = 0; iter < kMaxIter; ++iter) {
       find_basic_vars();
-      if (!check_optimal()) { break; }
+      if (!check_optimal()) {
+        break;
+      }
       check_new_solution();
     }
   }
@@ -261,10 +277,16 @@ struct EmdSolver {
     enter_x = nullptr;
 
     for (int i = 0; i < ssize; ++i) {
-      if (u[i] >= kInf) { continue; }
+      if (u[i] >= kInf) {
+        continue;
+      }
       for (int j = 0; j < dsize; ++j) {
-        if (v[j] >= kInf) { continue; }
-        if (is_x(i, j) != 0) { continue; }
+        if (v[j] >= kInf) {
+          continue;
+        }
+        if (is_x(i, j) != 0) {
+          continue;
+        }
         const float rc = cost(i, j) - u[i] - v[j];
         if (rc < min_rc) {
           min_rc = rc;
@@ -283,7 +305,9 @@ struct EmdSolver {
     std::fill(is_used.begin(), is_used.end(), 0);
 
     const int loop_size = find_loop_dfs(1);
-    if (loop_size < 4) { return; }
+    if (loop_size < 4) {
+      return;
+    }
 
     // Minimum flow on odd-indexed arcs (they will lose flow).
     float theta = kInf;
@@ -307,10 +331,15 @@ struct EmdSolver {
 
     if (leaving == nullptr) {
       for (int k = 1; k < loop_size; k += 2) {
-        if (loop_buf[k] != enter_x) { leaving = loop_buf[k]; break; }
+        if (loop_buf[k] != enter_x) {
+          leaving = loop_buf[k];
+          break;
+        }
       }
     }
-    if (leaving == nullptr) { return; }
+    if (leaving == nullptr) {
+      return;
+    }
 
     is_x(enter_x->i, enter_x->j) = 1;
     is_x(leaving->i, leaving->j) = 0;
@@ -318,12 +347,18 @@ struct EmdSolver {
     // Remove leaving from its row list.
     for (EmdNode2D** pp = &rows_x[leaving->i];
          (*pp) != nullptr; pp = &(*pp)->next[0]) {
-      if (*pp == leaving) { *pp = leaving->next[0]; break; }
+      if (*pp == leaving) {
+        *pp = leaving->next[0];
+        break;
+      }
     }
     // Remove leaving from its column list.
     for (EmdNode2D** pp = &cols_x[leaving->j];
          (*pp) != nullptr; pp = &(*pp)->next[1]) {
-      if (*pp == leaving) { *pp = leaving->next[1]; break; }
+      if (*pp == leaving) {
+        *pp = leaving->next[1];
+        break;
+      }
     }
 
     // Reuse the leaving node's slot for the entering variable.
@@ -367,7 +402,9 @@ struct EmdSolver {
           is_used[idx] = 1;
           loop_buf[depth] = cand;
           const int result = find_loop_dfs(depth + 1);
-          if (result > 0) { return result; }
+          if (result > 0) {
+            return result;
+          }
           is_used[idx] = 0;
         }
       }
@@ -392,10 +429,14 @@ struct EmdSolver {
   // Fill a SparseTransportPlan from the current basis.
   void extract_plan(SparseTransportPlan& plan) const {
     for (const EmdNode2D* node = x_nodes.data(); node != end_x; ++node) {
-      if (node->val <= 0.F) { continue; }
+      if (node->val <= 0.F) {
+        continue;
+      }
       const int oi = orig_idx1[node->i];
       const int oj = orig_idx2[node->j];
-      if (oi < 0 || oj < 0) { continue; }
+      if (oi < 0 || oj < 0) {
+        continue;
+      }
       plan.source.push_back(static_cast<uint32_t>(oi));
       plan.target.push_back(static_cast<uint32_t>(oj));
       plan.flow.push_back(static_cast<double>(node->val));

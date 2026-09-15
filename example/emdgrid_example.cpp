@@ -321,7 +321,8 @@ int main(int argc, char** argv) {
     std::cout << "Distance: " << dist << '\n';
     std::cout << "Computation time: " << elapsed_ms << " ms\n";
     if (need_plan) {
-      std::cout << "Transport plan flow entries: " << plan.source.size() << '\n';
+      std::cout << "Transport plan flow entries: "
+                << plan.source.size() << '\n';
       if (diagnostics) {
         run_diagnostics(layout, h1, h2, plan, emdgrid::GroundMetric::L1, dist);
       }
