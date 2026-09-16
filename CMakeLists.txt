@@ -153,9 +153,9 @@ if(EMDGRID_USE_OPENMP)
         "${HOMEBREW_LIBOMP_PREFIX}/include")
     endif()
     # GCC puts omp.h in a private compiler include directory that clang-tidy
-    # (which uses a Clang frontend) does not search. Expose it explicitly so
-    # clang-tidy can parse headers that include <omp.h>.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # (which uses a Clang frontend) does not search. Pass the path directly
+    # via clang-tidy's -extra-arg so the Clang frontend can find omp.h.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CLANG_TIDY_EXE)
       set(_omp_include_dir "")
       # Primary: ask GCC where its own libgcc lives; omp.h is next to it.
       execute_process(
@@ -182,7 +182,12 @@ if(EMDGRID_USE_OPENMP)
       endif()
       if(_omp_include_dir)
         message(STATUS "Exposing GCC omp.h for clang-tidy: ${_omp_include_dir}")
-        target_include_directories(emdgrid SYSTEM PUBLIC "${_omp_include_dir}")
+        # Patch CXX_CLANG_TIDY on emdgrid (already created above).
+        set_property(TARGET emdgrid APPEND PROPERTY
+          CXX_CLANG_TIDY "-extra-arg=-isystem${_omp_include_dir}")
+        # Propagate to targets created later (e.g. emdgrid_example).
+        list(APPEND CMAKE_CXX_CLANG_TIDY
+          "-extra-arg=-isystem${_omp_include_dir}")
       else()
         message(WARNING "Could not locate GCC omp.h directory for clang-tidy")
       endif()

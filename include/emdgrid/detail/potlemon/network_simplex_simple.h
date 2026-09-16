@@ -1839,19 +1839,18 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     // Update _last_succ from v_out towards the root.
     // The else-if guard avoids a no-op walk when last_succ hasn't changed
     // (optimisation from nbonneel/network_simplex).
-    // NOLINTNEXTLINE(bugprone-branch-clone)
+    int new_last_succ = old_last_succ;
     if (join != static_cast<ArcsType>(old_rev_thread) &&
         v_in != static_cast<ArcsType>(old_rev_thread)) {
-      for (u = static_cast<int>(v_out);
-           u != up_limit_out && _last_succ[u] == old_last_succ;
-           u = _parent[u]) {
-        _last_succ[u] = old_rev_thread;
-      }
+      new_last_succ = old_rev_thread;
     } else if (last_succ_out != old_last_succ) {
+      new_last_succ = last_succ_out;
+    }
+    if (new_last_succ != old_last_succ) {
       for (u = static_cast<int>(v_out);
            u != up_limit_out && _last_succ[u] == old_last_succ;
            u = _parent[u]) {
-        _last_succ[u] = last_succ_out;
+        _last_succ[u] = new_last_succ;
       }
     }
 
