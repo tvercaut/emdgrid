@@ -155,16 +155,21 @@ if(EMDGRID_USE_OPENMP)
     # GCC puts omp.h in a private compiler include directory that clang-tidy
     # (which uses a Clang frontend) does not search. Expose it explicitly so
     # clang-tidy can parse headers that include <omp.h>.
+    # Use -print-libgcc-file-name (always an absolute path) to locate the
+    # GCC lib dir, then check for include/omp.h next to it.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       execute_process(
-        COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=omp.h
-        OUTPUT_VARIABLE _gcc_omp_h
+        COMMAND ${CMAKE_CXX_COMPILER} -print-libgcc-file-name
+        OUTPUT_VARIABLE _libgcc_path
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
       )
-      if(_gcc_omp_h AND EXISTS "${_gcc_omp_h}")
-        get_filename_component(_gcc_omp_dir "${_gcc_omp_h}" DIRECTORY)
-        target_include_directories(emdgrid SYSTEM PUBLIC "${_gcc_omp_dir}")
+      if(_libgcc_path)
+        get_filename_component(_gcc_lib_dir "${_libgcc_path}" DIRECTORY)
+        if(EXISTS "${_gcc_lib_dir}/include/omp.h")
+          target_include_directories(emdgrid SYSTEM PUBLIC
+            "${_gcc_lib_dir}/include")
+        endif()
       endif()
     endif()
     message(STATUS "OpenMP found and enabled (disable with -DEMDGRID_USE_OPENMP=OFF).")
