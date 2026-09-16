@@ -42,7 +42,7 @@ jobs:
 
     - name: Install optional tools (clang-tidy)
       if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y clang-tidy
+      run: sudo apt-get install -y clang-tidy libomp-dev
 
     - name: Enable clang-tidy problem matcher
       if: matrix.os == 'ubuntu-latest'
