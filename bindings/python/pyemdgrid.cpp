@@ -12,6 +12,7 @@
 #include "emdgrid/greedy_emd_l1.hpp"
 #include "emdgrid/knothe_rosenblatt.hpp"
 #include "emdgrid/mcf_lemon_l1.hpp"
+#include "emdgrid/opencv_emd.hpp"
 
 namespace py = pybind11;
 
@@ -411,6 +412,77 @@ py::object dpartion_py(
   return py::cast(cost);
 }
 
+template <std::size_t Dim>
+double opencv_emd_impl(
+    const py::array_t<double, py::array::c_style>& h1,
+    const py::array_t<double, py::array::c_style>& h2,
+    emdgrid::GroundMetric metric,
+    emdgrid::SparseTransportPlan* plan = nullptr) {
+  if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
+      h2.ndim() != static_cast<py::ssize_t>(Dim)) {
+    throw std::invalid_argument("array dimensionality does not match Dim");
+  }
+  typename emdgrid::GridLayout<Dim>::Shape shape{};
+  for (std::size_t a = 0; a < Dim; ++a) {
+    shape[a] = static_cast<std::size_t>(h1.shape(static_cast<py::ssize_t>(a)));
+  }
+  const emdgrid::GridLayout<Dim> layout(shape);
+  const emdgrid::GridDataView<Dim, double> v1(
+      layout, std::span<const double>(h1.data(), h1.size()));
+  const emdgrid::GridDataView<Dim, double> v2(
+      layout, std::span<const double>(h2.data(), h2.size()));
+  return emdgrid::opencv_emd(v1, v2, metric, plan);
+}
+
+py::object opencv_emd_py(
+    const py::array_t<double, py::array::c_style>& h1,
+    const py::array_t<double, py::array::c_style>& h2,
+    const py::object& metric_obj = py::cast("l1"),
+    bool return_transport_plan = false) {
+  if (h1.ndim() != h2.ndim()) {
+    throw std::invalid_argument(
+        "h1 and h2 must have the same number of dimensions");
+  }
+
+  const emdgrid::GroundMetric metric = parse_ground_metric(metric_obj);
+
+  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan* plan_ptr =
+      return_transport_plan ? &plan : nullptr;
+
+  double cost = 0.0;
+  switch (h1.ndim()) {
+    case 1:
+      cost = opencv_emd_impl<1>(h1, h2, metric, plan_ptr);
+      break;
+    case 2:
+      cost = opencv_emd_impl<2>(h1, h2, metric, plan_ptr);
+      break;
+    case 3:
+      cost = opencv_emd_impl<3>(h1, h2, metric, plan_ptr);
+      break;
+    default:
+      throw std::invalid_argument(
+          "opencv_emd only supports 1-, 2-, or 3-dimensional histograms");
+  }
+
+  if (return_transport_plan) {
+    py::object coo_matrix;
+    try {
+      py::module_ scipy_sparse = py::module_::import("scipy.sparse");
+      std::size_t n_nodes = static_cast<std::size_t>(h1.size());
+      coo_matrix = scipy_sparse.attr("coo_matrix")(
+          py::make_tuple(plan.flow,
+                         py::make_tuple(plan.source, plan.target)),
+          py::make_tuple(n_nodes, n_nodes));
+    } catch (const py::error_already_set&) {
+      return py::make_tuple(cost, plan);
+    }
+    return py::make_tuple(cost, coo_matrix);
+  }
+  return py::cast(cost);
+}
+
 }  // namespace
 
 PYBIND11_MODULE(pyemdgrid, module) {
@@ -572,5 +644,34 @@ Returns
 -------
 float or tuple(float, SparseTransportPlan)
     The Knothe-Rosenblatt cost, or (cost, plan) if return_transport_plan is True.
+)doc");
+
+  module.def(
+      "opencv_emd", &opencv_emd_py, py::arg("h1"), py::arg("h2"),
+      py::arg("metric") = "l1", py::arg("return_transport_plan") = false,
+      R"doc(
+Compute Earth Mover's Distance using Rubner's transportation simplex.
+
+This is a port of the OpenCV EMD implementation (opencv/modules/imgproc/src/emd_new.cpp,
+branch 5.x), which itself is based on Yossi Rubner's 1998 code. The algorithm uses
+Russell's initialization and the primal transportation simplex method.
+
+Parameters
+----------
+h1 : numpy.ndarray, dtype=float64
+    First histogram (C-contiguous, 1-, 2-, or 3-dimensional).
+h2 : numpy.ndarray, dtype=float64
+    Second histogram (C-contiguous, same shape as *h1*).
+metric : GroundMetric or str, optional
+    Ground metric choice: GroundMetric.L1 or "l1" (default) versus
+    GroundMetric.SqEuclidean or "sqeuclidean".
+return_transport_plan : bool, optional
+    If True, return a tuple (cost, plan) where plan is a sparse COO matrix
+    (scipy.sparse.coo_matrix if scipy is available, otherwise SparseTransportPlan).
+
+Returns
+-------
+float or tuple(float, sparse matrix)
+    The Earth Mover's Distance, or (cost, plan) if return_transport_plan is True.
 )doc");
 }
