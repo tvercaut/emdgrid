@@ -718,10 +718,13 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       Cost min = 0;
 
       for (ArcsType base = 0; base < _search_arc_num; base += _block_size) {
-        const ArcsType block_end = std::min(base + _block_size, _search_arc_num);
+        const ArcsType block_end =
+            std::min(base + _block_size, _search_arc_num);
         for (ArcsType j = base; j < block_end; ++j) {
           ArcsType e = scan_start + j;
-          if (e >= _search_arc_num) { e -= _search_arc_num; }
+          if (e >= _search_arc_num) {
+            e -= _search_arc_num;
+          }
           const Cost c = reducedCost<kDirect>(e);
           if (c < min) {
             min = c;
@@ -730,7 +733,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         }
         if (min < -POTLEMON_EPSILON * epsilonBound()) {
           _next_arc = scan_start + block_end;
-          if (_next_arc >= _search_arc_num) { _next_arc -= _search_arc_num; }
+          if (_next_arc >= _search_arc_num) {
+            _next_arc -= _search_arc_num;
+          }
           return true;
         }
       }
@@ -745,7 +750,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
     // Parallel block-search: one thread-team spawn per call.
     // The original approach (one #pragma omp parallel per serial block) spawns
-    // _search_arc_num/_block_size teams per call; team-entry overhead dominates.
+    // _search_arc_num/_block_size teams per call; overhead dominates.
     // Here we spawn once and use par_block = num_threads*_block_size so each
     // thread processes _block_size arcs per block (same early-exit granularity
     // per thread as the serial path) while needing num_threads-fold fewer
@@ -769,19 +774,22 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         ThreadData& td = tdata[static_cast<std::size_t>(t)];
         for (ArcsType base = 0; base < _search_arc_num && !found;
              base += par_block) {
-          const ArcsType block_end = std::min(base + par_block, _search_arc_num);
+          const ArcsType block_end =
+              std::min(base + par_block, _search_arc_num);
 #pragma omp for schedule(static)
           for (ArcsType j = base; j < block_end; ++j) {
             ArcsType e = scan_start + j;
-            if (e >= _search_arc_num) { e -= _search_arc_num; }
+            if (e >= _search_arc_num) {
+              e -= _search_arc_num;
+            }
             const Cost c = reducedCost<kDirect>(e);
             if (c < td.min_val) {
               td.min_val = c;
               td.arc_id = e;
             }
           }
-          // Implicit barrier from omp for, then one thread reduces + checks exit.
-          // Implicit barrier from omp single propagates 'found' to all threads.
+          // Implicit barrier from omp for; one thread reduces + checks exit.
+          // Implicit barrier from omp single propagates 'found'.
 #pragma omp single
           {
             Cost block_min = Cost(0);
@@ -794,13 +802,17 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
             if (block_min < -POTLEMON_EPSILON * epsilonBound()) {
               found = true;
               _next_arc = scan_start + block_end;
-              if (_next_arc >= _search_arc_num) { _next_arc -= _search_arc_num; }
+              if (_next_arc >= _search_arc_num) {
+                _next_arc -= _search_arc_num;
+              }
             }
           }
         }
       }
 
-      if (found) { return true; }
+      if (found) {
+        return true;
+      }
       Cost min_val = Cost(0);
       for (int t = 0; t < num_threads; ++t) {
         if (tdata[static_cast<std::size_t>(t)].min_val < min_val) {
@@ -822,11 +834,15 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       constexpr ArcsType kOmpArcThreshold = 100'000'000;
       if (omp_get_max_threads() > 1 &&
           _search_arc_num >= kOmpArcThreshold) {
-        if (_use_direct) { return findEnteringArcOmpImpl<true>(); }
+        if (_use_direct) {
+          return findEnteringArcOmpImpl<true>();
+        }
         return findEnteringArcOmpImpl<false>();
       }
 #endif
-      if (_use_direct) { return findEnteringArcImpl<true>(); }
+      if (_use_direct) {
+        return findEnteringArcImpl<true>();
+      }
       return findEnteringArcImpl<false>();
     }
   };
