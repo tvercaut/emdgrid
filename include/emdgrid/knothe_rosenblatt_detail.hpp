@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -17,10 +18,13 @@ namespace emdgrid {
 namespace detail {
 
 /// Represents a single active subproblem task in Knothe-Rosenblatt.
+///
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::floating_point CompScalar = double>
 struct KrTask {
   std::size_t src_base_offset{0};
   std::size_t tgt_base_offset{0};
-  double mass{0.0};
+  CompScalar mass{0};
 };
 
 /// Compute C-order linear strides for a grid shape.

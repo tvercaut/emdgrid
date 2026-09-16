@@ -14,6 +14,7 @@
 
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/knothe_rosenblatt_detail.hpp"
+#include "emdgrid/utils.hpp"
 
 namespace emdgrid {
 
@@ -33,7 +34,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     GroundMetric metric = GroundMetric::L1,
     std::span<const std::size_t> dimension_order = {},
-    SparseTransportPlan* plan = nullptr) {
+    SparseTransportPlanPtr<CompScalar> plan = nullptr) {
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -50,18 +51,20 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->flow.clear();
   }
 
-  double total_mass_h1 = 0.0;
+  constexpr CompScalar eps = residual_mass_epsilon<CompScalar>;
+
+  CompScalar total_mass_h1{0};
   for (std::size_t i = 0; i < node_count; ++i) {
-    total_mass_h1 += static_cast<double>(h1.data()[i]);
+    total_mass_h1 += static_cast<CompScalar>(h1.data()[i]);
   }
-  if (total_mass_h1 <= 1e-12) {
+  if (total_mass_h1 <= eps) {
     return CompScalar{0};
   }
 
-  std::vector<detail::KrTask> current_tasks;
+  std::vector<detail::KrTask<CompScalar>> current_tasks;
   current_tasks.push_back({0, 0, total_mass_h1});
 
-  double total_cost = 0.0;
+  CompScalar total_cost{0};
 
   spdlog::info(
       "Starting Knothe-Rosenblatt transport solver (Dim={}, metric={})...",
@@ -83,51 +86,51 @@ template <std::size_t Dim, std::floating_point Scalar,
     const auto free_offsets =
         detail::precompute_free_offsets<Dim>(shape, strides, free_dims);
 
-    std::vector<detail::KrTask> next_tasks;
+    std::vector<detail::KrTask<CompScalar>> next_tasks;
     const std::size_t num_tasks = current_tasks.size();
 
 #ifdef _OPENMP
 #pragma omp parallel
     {
-      std::vector<detail::KrTask> local_next_tasks;
-      double local_cost = 0.0;
-      SparseTransportPlan local_plan;
-      std::vector<double> u(extent, 0.0);
-      std::vector<double> v(extent, 0.0);
-      std::vector<detail::MonotoneFlow> matching;
+      std::vector<detail::KrTask<CompScalar>> local_next_tasks;
+      CompScalar local_cost{0};
+      SparseTransportPlan<CompScalar> local_plan;
+      std::vector<CompScalar> u(extent, CompScalar{0});
+      std::vector<CompScalar> v(extent, CompScalar{0});
+      std::vector<detail::MonotoneFlow<CompScalar>> matching;
 
 #pragma omp for nowait
       for (std::ptrdiff_t t_idx = 0;
            t_idx < static_cast<std::ptrdiff_t>(num_tasks); ++t_idx) {
         const auto& task = current_tasks[static_cast<std::size_t>(t_idx)];
-        if (task.mass <= 1e-12) {
+        if (task.mass <= eps) {
           continue;
         }
 
-        std::fill(u.begin(), u.end(), 0.0);
-        std::fill(v.begin(), v.end(), 0.0);
+        std::fill(u.begin(), u.end(), CompScalar{0});
+        std::fill(v.begin(), v.end(), CompScalar{0});
 
         for (std::size_t x = 0; x < extent; ++x) {
           const std::size_t src_off = task.src_base_offset + (x * dim_stride);
           const std::size_t tgt_off = task.tgt_base_offset + (x * dim_stride);
-          double u_val = 0.0;
-          double v_val = 0.0;
+          CompScalar u_val{0};
+          CompScalar v_val{0};
           for (const std::size_t delta : free_offsets) {
-            u_val += static_cast<double>(h1.data()[src_off + delta]);
-            v_val += static_cast<double>(h2.data()[tgt_off + delta]);
+            u_val += static_cast<CompScalar>(h1.data()[src_off + delta]);
+            v_val += static_cast<CompScalar>(h2.data()[tgt_off + delta]);
           }
           u[x] = u_val;
           v[x] = v_val;
         }
 
-        double sum_u = 0.0;
-        double sum_v = 0.0;
+        CompScalar sum_u{0};
+        CompScalar sum_v{0};
         for (std::size_t x = 0; x < extent; ++x) {
           sum_u += u[x];
           sum_v += v[x];
         }
 
-        if (sum_u <= 1e-12 || sum_v <= 1e-12) {
+        if (sum_u <= eps || sum_v <= eps) {
           continue;
         }
 
@@ -138,13 +141,13 @@ template <std::size_t Dim, std::floating_point Scalar,
 
         // 1D monotone matching is optimal for both L1 and squared Euclidean
         // metrics on 1D grids (Monge property), yielding identical couplings.
-        detail::compute_1d_monotone_matching(u, v, &matching);
+        detail::compute_1d_monotone_matching<CompScalar>(u, v, &matching);
 
         for (const auto& flow_pair : matching) {
-          const double branch_mass = task.mass * flow_pair.flow;
-          const double diff = static_cast<double>(flow_pair.src_idx) -
-                              static_cast<double>(flow_pair.tgt_idx);
-          const double dist_unit =
+          const CompScalar branch_mass = task.mass * flow_pair.flow;
+          const CompScalar diff = static_cast<CompScalar>(flow_pair.src_idx) -
+                                  static_cast<CompScalar>(flow_pair.tgt_idx);
+          const CompScalar dist_unit =
               (metric == GroundMetric::L1) ? std::abs(diff) : (diff * diff);
 
           local_cost += branch_mass * dist_unit;
@@ -183,40 +186,40 @@ template <std::size_t Dim, std::floating_point Scalar,
       }
     }
 #else
-    std::vector<double> u(extent, 0.0);
-    std::vector<double> v(extent, 0.0);
-    std::vector<detail::MonotoneFlow> matching;
+    std::vector<CompScalar> u(extent, CompScalar{0});
+    std::vector<CompScalar> v(extent, CompScalar{0});
+    std::vector<detail::MonotoneFlow<CompScalar>> matching;
 
     for (std::size_t t_idx = 0; t_idx < num_tasks; ++t_idx) {
       const auto& task = current_tasks[t_idx];
-      if (task.mass <= 1e-12) {
+      if (task.mass <= eps) {
         continue;
       }
 
-      std::fill(u.begin(), u.end(), 0.0);
-      std::fill(v.begin(), v.end(), 0.0);
+      std::fill(u.begin(), u.end(), CompScalar{0});
+      std::fill(v.begin(), v.end(), CompScalar{0});
 
       for (std::size_t x = 0; x < extent; ++x) {
         const std::size_t src_off = task.src_base_offset + (x * dim_stride);
         const std::size_t tgt_off = task.tgt_base_offset + (x * dim_stride);
-        double u_val = 0.0;
-        double v_val = 0.0;
+        CompScalar u_val{0};
+        CompScalar v_val{0};
         for (const std::size_t delta : free_offsets) {
-          u_val += static_cast<double>(h1.data()[src_off + delta]);
-          v_val += static_cast<double>(h2.data()[tgt_off + delta]);
+          u_val += static_cast<CompScalar>(h1.data()[src_off + delta]);
+          v_val += static_cast<CompScalar>(h2.data()[tgt_off + delta]);
         }
         u[x] = u_val;
         v[x] = v_val;
       }
 
-      double sum_u = 0.0;
-      double sum_v = 0.0;
+      CompScalar sum_u{0};
+      CompScalar sum_v{0};
       for (std::size_t x = 0; x < extent; ++x) {
         sum_u += u[x];
         sum_v += v[x];
       }
 
-      if (sum_u <= 1e-12 || sum_v <= 1e-12) {
+      if (sum_u <= eps || sum_v <= eps) {
         continue;
       }
 
@@ -227,13 +230,13 @@ template <std::size_t Dim, std::floating_point Scalar,
 
       // 1D monotone matching is optimal for both L1 and squared Euclidean
       // metrics on 1D grids (Monge property), yielding identical couplings.
-      detail::compute_1d_monotone_matching(u, v, &matching);
+      detail::compute_1d_monotone_matching<CompScalar>(u, v, &matching);
 
       for (const auto& flow_pair : matching) {
-        const double branch_mass = task.mass * flow_pair.flow;
-        const double diff = static_cast<double>(flow_pair.src_idx) -
-                            static_cast<double>(flow_pair.tgt_idx);
-        const double dist_unit =
+        const CompScalar branch_mass = task.mass * flow_pair.flow;
+        const CompScalar diff = static_cast<CompScalar>(flow_pair.src_idx) -
+                                static_cast<CompScalar>(flow_pair.tgt_idx);
+        const CompScalar dist_unit =
             (metric == GroundMetric::L1) ? std::abs(diff) : (diff * diff);
 
         total_cost += branch_mass * dist_unit;
@@ -260,7 +263,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   spdlog::info("Knothe-Rosenblatt solver completed with total cost {}.",
                total_cost);
 
-  return static_cast<CompScalar>(total_cost);
+  return total_cost;
 }
 
 }  // namespace emdgrid

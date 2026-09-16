@@ -218,7 +218,7 @@ TEST_CASE(
   const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   double cost = emdgrid::emd_sqeuclidean_1d(h1, h2, &plan);
 
   CHECK(cost == doctest::Approx(4.0));
@@ -308,7 +308,7 @@ TEST_CASE("mcf_l1 2D: transport plan computation and cost reconstruction") {
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1_norm));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2_norm));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   double cost = emdgrid::mcf_l1(h1, h2, &plan);
   CHECK(cost == doctest::Approx(1.0));
 
@@ -442,7 +442,7 @@ TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
   const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
   const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
 
-  auto check_plan_sum = [&](const emdgrid::SparseTransportPlan& plan) {
+  auto check_plan_sum = [&](const emdgrid::SparseTransportPlan<>& plan) {
     double total_flow = 0.0;
     for (const double f : plan.flow) {
       total_flow += f;
@@ -451,7 +451,7 @@ TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
   };
 
   {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     const double cost = emdgrid::mcf_lemon_l1(
         h1, h2, emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
     CHECK(cost > 0.0);
@@ -459,7 +459,7 @@ TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
   }
 
   {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     const double cost = emdgrid::mcf_lemon_l1(
         h1, h2, emdgrid::McfLemonAlgorithm::CostScaling, &plan);
     CHECK(cost > 0.0);
@@ -467,14 +467,14 @@ TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
   }
 
   {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     const double cost = emdgrid::mcf_l1(h1, h2, &plan);
     CHECK(cost > 0.0);
     check_plan_sum(plan);
   }
 
   {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     const double cost = emdgrid::mcf_dpartion(
         h1, h2, emdgrid::GroundMetric::L1,
         emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
@@ -483,7 +483,7 @@ TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
   }
 
   {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     const double cost = emdgrid::mcf_dpartion(
         h1, h2, emdgrid::GroundMetric::SqEuclidean,
         emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
@@ -492,7 +492,7 @@ TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
   }
 
   {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     const double cost = emdgrid::mcf_potlemon_l1(h1, h2, &plan);
     CHECK(cost > 0.0);
     check_plan_sum(plan);
@@ -510,7 +510,7 @@ TEST_CASE(
 
   for (auto algo : {emdgrid::McfLemonAlgorithm::NetworkSimplex,
                     emdgrid::McfLemonAlgorithm::CostScaling}) {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     double cost = emdgrid::mcf_lemon_l1(h1, h2, algo, &plan);
     CHECK(cost == doctest::Approx(1.0));
 
@@ -704,7 +704,7 @@ TEST_CASE("mcf_dpartion 2D: transport plan computation and reconstruction") {
 
   for (auto metric :
        {emdgrid::GroundMetric::L1, emdgrid::GroundMetric::SqEuclidean}) {
-    emdgrid::SparseTransportPlan plan;
+    emdgrid::SparseTransportPlan<> plan;
     double cost = emdgrid::mcf_dpartion(
         h1, h2, metric, emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
 
@@ -931,7 +931,7 @@ TEST_CASE(
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
 
-  emdgrid::SparseTransportPlan plan_l1;
+  emdgrid::SparseTransportPlan<> plan_l1;
   double cost_l1 = emdgrid::knothe_rosenblatt(
       h1, h2, emdgrid::GroundMetric::L1, {}, &plan_l1);
 
@@ -949,7 +949,7 @@ TEST_CASE(
   }
   CHECK(reconstructed_l1 == doctest::Approx(cost_l1));
 
-  emdgrid::SparseTransportPlan plan_sq;
+  emdgrid::SparseTransportPlan<> plan_sq;
   double cost_sq = emdgrid::knothe_rosenblatt(
       h1, h2, emdgrid::GroundMetric::SqEuclidean, {}, &plan_sq);
 
@@ -1009,7 +1009,7 @@ TEST_CASE(
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   double approx_cost = emdgrid::greedy_emd_l1_approx(h1, h2, &plan);
 
   // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
@@ -1057,7 +1057,7 @@ TEST_CASE(
   const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
   const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   double approx_cost = emdgrid::greedy_emd_l1_approx(h1, h2, &plan);
 
   REQUIRE(!plan.flow.empty());
@@ -1101,7 +1101,7 @@ TEST_CASE("emd_l1 1D: transport plan computation") {
   const emdgrid::GridDataView<1, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<1, double> h2(layout, std::span(h2v));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   double cost = emdgrid::emd_l1(h1, h2, &plan);
 
   CHECK(cost == doctest::Approx(2.0));
@@ -1120,7 +1120,7 @@ TEST_CASE("emd_l1 2D: transport plan computation and cost reconstruction") {
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1v));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2v));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   double cost = emdgrid::emd_l1(h1, h2, &plan);
   // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   CHECK(cost == doctest::Approx(2.0));

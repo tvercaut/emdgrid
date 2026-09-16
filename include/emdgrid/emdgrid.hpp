@@ -8,6 +8,7 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace emdgrid {
@@ -135,10 +136,22 @@ class GridDataView {
 [[nodiscard]] std::string_view version() noexcept;
 
 /// Sparse transport plan represented in Coordinate (COO) format.
+///
+/// @tparam CompScalar Scalar type used for the flow values (default: double).
+template <std::floating_point CompScalar = double>
 struct SparseTransportPlan {
   std::vector<uint32_t> source;
   std::vector<uint32_t> target;
-  std::vector<double> flow;
+  std::vector<CompScalar> flow;
 };
+
+/// Type of the optional transport-plan output parameter of the solvers.
+///
+/// `std::type_identity_t` makes the parameter a non-deduced context, so
+/// `CompScalar` is fixed by the solver's own template arguments and callers
+/// can keep passing a plain `nullptr` when they do not want a plan.
+template <std::floating_point CompScalar>
+using SparseTransportPlanPtr =
+    std::type_identity_t<SparseTransportPlan<CompScalar>>*;
 
 }  // namespace emdgrid

@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <concepts>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -12,25 +13,29 @@
 #include <spdlog/spdlog.h>  // NOLINT(build/include_order)
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/utils.hpp"
 
 namespace emdgrid {
 
-struct SparseTransportPlan;
-
 namespace detail {
 
+/// Directed flow carried by one basic-variable edge of the grid graph.
+///
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::floating_point CompScalar = double>
 struct DirectedEdgeFlow {
   std::ptrdiff_t from;
   std::ptrdiff_t to;
-  double flow;
+  CompScalar flow;
 };
 
 // ---------------------------------------------------------------------------
 //  Data structures for the network-simplex EMD-L1 solver
 // ---------------------------------------------------------------------------
 
+template <std::floating_point CompScalar = double>
 struct LingOkadaGridNode {
-  double d{0.0};                   // supply/demand = H1[i] - H2[i]
+  CompScalar d{0};                 // supply/demand = H1[i] - H2[i]
   int u{0};                        // dual variable (potential)
   int level{-1};                   // depth in BV tree (-1=unvisited)
   std::ptrdiff_t parent_node{-1};  // index of parent node  (-1 = root)
@@ -38,10 +43,11 @@ struct LingOkadaGridNode {
   std::ptrdiff_t first_child{-1};  // head of linked-list of child BV edges
 };
 
+template <std::floating_point CompScalar = double>
 struct LingOkadaGridEdge {
   std::ptrdiff_t p{-1};    // parent endpoint in BV tree orientation
   std::ptrdiff_t c{-1};    // child  endpoint
-  double flow{0.0};
+  CompScalar flow{0};
   int dir{1};              // 1 = outward (p→c), 0 = inward
   std::ptrdiff_t next{-1};  // next sibling in parent's child-edge linked list
 };
@@ -55,8 +61,14 @@ struct NBVEdge {
 // ---------------------------------------------------------------------------
 //  Network-simplex solver
 // ---------------------------------------------------------------------------
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::floating_point CompScalar = double>
 class LingOkadaSolver {
  public:
+  using GridNode = LingOkadaGridNode<CompScalar>;
+  using GridEdge = LingOkadaGridEdge<CompScalar>;
+  using EdgeFlow = DirectedEdgeFlow<CompScalar>;
+
   LingOkadaSolver(std::size_t num_nodes, std::size_t num_edges)
       : m_nodes(num_nodes),
         m_edges(num_edges),
@@ -67,12 +79,12 @@ class LingOkadaSolver {
     m_nbv.reserve(num_edges);
   }
 
-  LingOkadaGridNode& node(std::ptrdiff_t i) { return m_nodes[i]; }
+  GridNode& node(std::ptrdiff_t i) { return m_nodes[i]; }
 
   // Register a BV edge chosen by the greedy step.
   // `from_node` is the processed node, `to_node` is its greedy neighbour.
   void register_bv(std::ptrdiff_t from_node, std::ptrdiff_t to_node,
-                   double flow, int dir) {
+                   CompScalar flow, int dir) {
     std::ptrdiff_t idx = static_cast<std::ptrdiff_t>(m_n_edges++);
     m_edges[idx] = {from_node, to_node, flow, dir, -1};
     m_is_bv[idx] = true;
@@ -81,18 +93,18 @@ class LingOkadaSolver {
   // Register a non-basic (NBV) edge from the greedy step.
   void register_nbv(std::ptrdiff_t low, std::ptrdiff_t high) {
     std::ptrdiff_t idx = static_cast<std::ptrdiff_t>(m_n_edges++);
-    m_edges[idx] = {low, high, 0.0, 1, -1};
+    m_edges[idx] = {low, high, CompScalar{0}, 1, -1};
     m_is_bv[idx] = false;
     m_nbv.push_back({idx, low, high});
   }
 
   // Run network simplex and return the EMD-L1 value.
-  double solve(std::ptrdiff_t root, int max_iter = 500);
+  CompScalar solve(std::ptrdiff_t root, int max_iter = 500);
 
-  [[nodiscard]] std::vector<DirectedEdgeFlow> get_directed_edge_flows() const {
-    std::vector<DirectedEdgeFlow> flows;
+  [[nodiscard]] std::vector<EdgeFlow> get_directed_edge_flows() const {
+    std::vector<EdgeFlow> flows;
     for (std::size_t e = 0; e < m_n_edges; ++e) {
-      if (m_is_bv[e] && m_edges[e].flow > 0.0) {
+      if (m_is_bv[e] && m_edges[e].flow > CompScalar{0}) {
         if (m_edges[e].dir == 1) {
           flows.push_back({m_edges[e].p, m_edges[e].c, m_edges[e].flow});
         } else {
@@ -103,8 +115,8 @@ class LingOkadaSolver {
     return flows;
   }
 
-  [[nodiscard]] double total_flow() const {
-    double total = 0.0;
+  [[nodiscard]] CompScalar total_flow() const {
+    CompScalar total{0};
     for (std::size_t e = 0; e < m_n_edges; ++e) {
       if (m_is_bv[e]) {
         total += m_edges[e].flow;
@@ -120,8 +132,8 @@ class LingOkadaSolver {
   void find_loop();
   void pivot();
 
-  std::vector<LingOkadaGridNode> m_nodes;
-  std::vector<LingOkadaGridEdge> m_edges;
+  std::vector<GridNode> m_nodes;
+  std::vector<GridEdge> m_edges;
   std::vector<bool> m_is_bv;
   std::vector<NBVEdge> m_nbv;
   std::size_t m_n_edges{0};
@@ -142,7 +154,8 @@ class LingOkadaSolver {
 //  Implementation
 // ---------------------------------------------------------------------------
 
-inline void LingOkadaSolver::init_bv_tree(std::ptrdiff_t root) {
+template <std::floating_point CompScalar>
+void LingOkadaSolver<CompScalar>::init_bv_tree(std::ptrdiff_t root) {
   const auto n = static_cast<std::ptrdiff_t>(m_nodes.size());
 
   // Build BV adjacency: for each BV edge e, record it at both endpoints.
@@ -190,7 +203,8 @@ inline void LingOkadaSolver::init_bv_tree(std::ptrdiff_t root) {
   }
 }
 
-inline void LingOkadaSolver::update_subtree(std::ptrdiff_t start) {
+template <std::floating_point CompScalar>
+void LingOkadaSolver<CompScalar>::update_subtree(std::ptrdiff_t start) {
   std::ptrdiff_t head = 0;
   std::ptrdiff_t tail = 0;
   m_aux[tail++] = start;
@@ -216,7 +230,8 @@ inline void LingOkadaSolver::update_subtree(std::ptrdiff_t start) {
   }
 }
 
-inline bool LingOkadaSolver::is_optimal() {
+template <std::floating_point CompScalar>
+bool LingOkadaSolver<CompScalar>::is_optimal() {
   m_enter_nbv_pos = -1;
   int min_cost = 0;
 
@@ -255,7 +270,8 @@ inline bool LingOkadaSolver::is_optimal() {
   return false;
 }
 
-inline void LingOkadaSolver::find_loop() {
+template <std::floating_point CompScalar>
+void LingOkadaSolver<CompScalar>::find_loop() {
   // Entering edge: m_edges[m_nbv[m_enter_nbv_pos].eidx]
   // m_from_loop: ancestors of entering parent;
   // m_to_loop:   ancestors of entering child.
@@ -267,7 +283,7 @@ inline void LingOkadaSolver::find_loop() {
   m_i_to = 0;
   m_leave_edge = -1;
   m_leave_flag = 0;
-  double min_flow = std::numeric_limits<double>::max();
+  CompScalar min_flow = std::numeric_limits<CompScalar>::max();
 
   // Bring from_node and to_node to the same tree level
   while (m_nodes[from_node].level > m_nodes[to_node].level) {
@@ -327,9 +343,10 @@ inline void LingOkadaSolver::find_loop() {
   }
 }
 
-inline void LingOkadaSolver::pivot() {
+template <std::floating_point CompScalar>
+void LingOkadaSolver<CompScalar>::pivot() {
   std::ptrdiff_t enter_eidx = m_nbv[m_enter_nbv_pos].eidx;
-  const double min_flow = m_edges[m_leave_edge].flow;
+  const CompScalar min_flow = m_edges[m_leave_edge].flow;
 
   // Update flows along the loop
   for (std::ptrdiff_t k = 0; k < m_i_from; ++k) {
@@ -417,7 +434,9 @@ inline void LingOkadaSolver::pivot() {
   m_nodes[enter_child].level = m_nodes[ep].level + 1;
 }
 
-inline double LingOkadaSolver::solve(std::ptrdiff_t root, int max_iter) {
+template <std::floating_point CompScalar>
+CompScalar LingOkadaSolver<CompScalar>::solve(std::ptrdiff_t root,
+                                              int max_iter) {
   spdlog::info("Starting network simplex solver (max_iter={})...", max_iter);
   init_bv_tree(root);
   update_subtree(root);
@@ -449,30 +468,40 @@ inline double LingOkadaSolver::solve(std::ptrdiff_t root, int max_iter) {
   return total_flow();
 }
 
+/// Unsplit mass still held at a node, tagged with the bin it came from.
+///
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::floating_point CompScalar = double>
 struct SupplyItem {
   uint32_t source;
-  double amount;
+  CompScalar amount;
 };
 
-inline void extract_transport_plan(
+/// Decomposes basic-variable edge flows into a bin-to-bin transport plan.
+///
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::floating_point CompScalar = double>
+void extract_transport_plan(
     std::size_t n_nodes,
-    const std::vector<double>& h1_data,
-    const std::vector<double>& h2_data,
-    const std::vector<DirectedEdgeFlow>& edge_flows,
-    SparseTransportPlan* plan) {
+    const std::vector<CompScalar>& h1_data,
+    const std::vector<CompScalar>& h2_data,
+    const std::vector<DirectedEdgeFlow<CompScalar>>& edge_flows,
+    SparseTransportPlan<CompScalar>* plan) {
   if (plan == nullptr) {
     return;
   }
+  constexpr CompScalar eps = residual_mass_epsilon<CompScalar>;
+
   plan->source.clear();
   plan->target.clear();
   plan->flow.clear();
 
-  std::vector<double> supply(n_nodes, 0.0);
-  std::vector<double> demand(n_nodes, 0.0);
+  std::vector<CompScalar> supply(n_nodes, CompScalar{0});
+  std::vector<CompScalar> demand(n_nodes, CompScalar{0});
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    double self_mass = std::min(h1_data[i], h2_data[i]);
-    if (self_mass > 0.0) {
+    CompScalar self_mass = std::min(h1_data[i], h2_data[i]);
+    if (self_mass > CompScalar{0}) {
       plan->source.push_back(static_cast<uint32_t>(i));
       plan->target.push_back(static_cast<uint32_t>(i));
       plan->flow.push_back(self_mass);
@@ -501,9 +530,9 @@ inline void extract_transport_plan(
     }
   }
 
-  std::vector<std::vector<SupplyItem>> node_supplies(n_nodes);
+  std::vector<std::vector<SupplyItem<CompScalar>>> node_supplies(n_nodes);
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    if (supply[i] > 0.0) {
+    if (supply[i] > CompScalar{0}) {
       node_supplies[i].push_back({static_cast<uint32_t>(i), supply[i]});
     }
   }
@@ -514,17 +543,17 @@ inline void extract_transport_plan(
     std::size_t u = zero_in_nodes[head++];
 
     // 1. Satisfy demand at u using node_supplies[u]
-    double d_u = demand[u];
-    while (d_u > 1e-12 && !node_supplies[u].empty()) {
+    CompScalar d_u = demand[u];
+    while (d_u > eps && !node_supplies[u].empty()) {
       auto& item = node_supplies[u].back();
-      double take = std::min(d_u, item.amount);
+      CompScalar take = std::min(d_u, item.amount);
       plan->source.push_back(item.source);
       plan->target.push_back(static_cast<uint32_t>(u));
       plan->flow.push_back(take);
 
       d_u -= take;
       item.amount -= take;
-      if (item.amount <= 1e-12) {
+      if (item.amount <= eps) {
         node_supplies[u].pop_back();
       }
     }
@@ -533,16 +562,16 @@ inline void extract_transport_plan(
     for (std::size_t e_idx : out_edges[u]) {
       const auto& edge = edge_flows[e_idx];
       std::size_t v = static_cast<std::size_t>(edge.to);
-      double f_needed = edge.flow;
+      CompScalar f_needed = edge.flow;
 
-      while (f_needed > 1e-12 && !node_supplies[u].empty()) {
+      while (f_needed > eps && !node_supplies[u].empty()) {
         auto& item = node_supplies[u].back();
-        double take = std::min(f_needed, item.amount);
+        CompScalar take = std::min(f_needed, item.amount);
         node_supplies[v].push_back({item.source, take});
 
         f_needed -= take;
         item.amount -= take;
-        if (item.amount <= 1e-12) {
+        if (item.amount <= eps) {
           node_supplies[u].pop_back();
         }
       }
@@ -555,11 +584,17 @@ inline void extract_transport_plan(
   }
 }
 
-template <std::size_t Dim, class Scalar, class CompScalar = double>
+/// Builds the greedy basic feasible solution of Ling & Okada.
+///
+/// @tparam Dim        Grid dimensionality (>= 2).
+/// @tparam Scalar     Input histogram scalar type.
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::size_t Dim, std::floating_point Scalar,
+          std::floating_point CompScalar = double>  // NOLINT(*)
   requires(Dim >= 2)  // NOLINT(whitespace/indent_namespace)
 void greedy_init(const GridDataView<Dim, Scalar>& h1,
                  const GridDataView<Dim, Scalar>& h2,
-                 LingOkadaSolver& solver) {
+                 LingOkadaSolver<CompScalar>& solver) {
   const auto& layout = h1.layout();
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
@@ -570,8 +605,7 @@ void greedy_init(const GridDataView<Dim, Scalar>& h1,
     CompScalar d = static_cast<CompScalar>(h1.data()[i]) -
                    static_cast<CompScalar>(h2.data()[i]);
     demand[i] = d;
-    solver.node(static_cast<std::ptrdiff_t>(i)).d =
-        static_cast<double>(d);
+    solver.node(static_cast<std::ptrdiff_t>(i)).d = d;
   }
 
   // Strides: stride[a] = product of shape[a+1..Dim-1]
@@ -630,8 +664,7 @@ void greedy_init(const GridDataView<Dim, Scalar>& h1,
 
     // BV edge: i → neighbour
     const int bv_dir = (d_i > CompScalar{0}) ? 1 : 0;
-    solver.register_bv(i, neighbour,
-                       static_cast<double>(std::abs(d_i)), bv_dir);
+    solver.register_bv(i, neighbour, std::abs(d_i), bv_dir);
 
     // Update working arrays
     demand[static_cast<std::size_t>(neighbour)] += d_i;

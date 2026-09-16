@@ -39,8 +39,8 @@ namespace detail {
 
 template <typename T>
 concept ValidDpartCost =
-    !std::is_same_v<std::decay_t<T>, McfLemonAlgorithm> &&  // NOLINT(*)
-    !std::is_same_v<std::decay_t<T>, GroundMetric>;         // NOLINT(*)
+    ValidCostFn<T> &&                                        // NOLINT(*)
+    !std::is_same_v<std::decay_t<T>, McfLemonAlgorithm>;     // NOLINT(*)
 
 template <typename T>
 concept HasExtractSelfMassMember = requires {
@@ -108,8 +108,9 @@ template <std::size_t Dim, std::floating_point Scalar,
 [[nodiscard]] CompScalar mcf_lemon_l1(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     McfLemonAlgorithm algo = McfLemonAlgorithm::NetworkSimplex,
-    SparseTransportPlan* plan = nullptr, double scale = 1e6,
-    double mass_tol = 1e-6) {
+    SparseTransportPlanPtr<CompScalar> plan = nullptr,
+    CompScalar scale = static_cast<CompScalar>(1e6),
+    CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -118,19 +119,20 @@ template <std::size_t Dim, std::floating_point Scalar,
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
-  double t1 = 0.0;
-  double t2 = 0.0;
+  CompScalar t1{0};
+  CompScalar t2{0};
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double v1 = static_cast<double>(h1.data()[i]);
-    const double v2 = static_cast<double>(h2.data()[i]);
-    if (v1 < 0.0 || v2 < 0.0) {
+    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
+    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
+    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
       throw std::invalid_argument("histograms must be nonnegative");
     }
     t1 += v1;
     t2 += v2;
   }
 
-  if (std::abs(t1 - 1.0) > mass_tol || std::abs(t2 - 1.0) > mass_tol) {
+  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
+      std::abs(t2 - CompScalar{1}) > mass_tol) {
     throw std::invalid_argument("expected unit-mass histograms");
   }
 
@@ -138,12 +140,12 @@ template <std::size_t Dim, std::floating_point Scalar,
   std::size_t max_abs_idx = 0;
   int64_t max_abs_val = -1;
 
-  double cum_target = 0.0;
+  CompScalar cum_target{0};
   int64_t cum_scaled_prev = 0;
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double diff = static_cast<double>(h1.data()[i]) -
-                        static_cast<double>(h2.data()[i]);
+    const CompScalar diff = static_cast<CompScalar>(h1.data()[i]) -
+                            static_cast<CompScalar>(h2.data()[i]);
     cum_target += diff;
     const int64_t cum_scaled = std::llround(cum_target * scale);
     const int64_t s = cum_scaled - cum_scaled_prev;
@@ -235,8 +237,8 @@ template <std::size_t Dim, std::floating_point Scalar,
         graph, capacity, cost, supply_map, flow_adj_ptr);
   }
 
-  const CompScalar total_cost = static_cast<CompScalar>(raw_optimal_cost) /
-                                static_cast<CompScalar>(scale);
+  const CompScalar total_cost =
+      static_cast<CompScalar>(raw_optimal_cost) / scale;
 
   if (plan) {
     plan->source.clear();
@@ -244,10 +246,10 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->flow.clear();
 
     for (std::size_t i = 0; i < n_nodes; ++i) {
-      const double self_mass =
-          std::min(static_cast<double>(h1.data()[i]),
-                   static_cast<double>(h2.data()[i]));
-      if (self_mass > 0.0) {
+      const CompScalar self_mass =
+          std::min(static_cast<CompScalar>(h1.data()[i]),
+                   static_cast<CompScalar>(h2.data()[i]));
+      if (self_mass > CompScalar{0}) {
         plan->source.push_back(static_cast<uint32_t>(i));
         plan->target.push_back(static_cast<uint32_t>(i));
         plan->flow.push_back(self_mass);
@@ -306,7 +308,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 
         plan->source.push_back(static_cast<uint32_t>(src));
         plan->target.push_back(static_cast<uint32_t>(target));
-        plan->flow.push_back(static_cast<double>(bottleneck) / scale);
+        plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
       }
     }
   }
@@ -332,8 +334,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     CostFn&& cost_fn,
     McfLemonAlgorithm algo = McfLemonAlgorithm::NetworkSimplex,
-    SparseTransportPlan* plan = nullptr, double scale = 1e6,
-    double mass_tol = 1e-6) {
+    SparseTransportPlanPtr<CompScalar> plan = nullptr,
+    CompScalar scale = static_cast<CompScalar>(1e6),
+    CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -342,19 +345,20 @@ template <std::size_t Dim, std::floating_point Scalar,
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
-  double t1 = 0.0;
-  double t2 = 0.0;
+  CompScalar t1{0};
+  CompScalar t2{0};
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double v1 = static_cast<double>(h1.data()[i]);
-    const double v2 = static_cast<double>(h2.data()[i]);
-    if (v1 < 0.0 || v2 < 0.0) {
+    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
+    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
+    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
       throw std::invalid_argument("histograms must be nonnegative");
     }
     t1 += v1;
     t2 += v2;
   }
 
-  if (std::abs(t1 - 1.0) > mass_tol || std::abs(t2 - 1.0) > mass_tol) {
+  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
+      std::abs(t2 - CompScalar{1}) > mass_tol) {
     throw std::invalid_argument("expected unit-mass histograms");
   }
 
@@ -376,15 +380,16 @@ template <std::size_t Dim, std::floating_point Scalar,
   constexpr bool do_extract_self_mass =
       detail::should_extract_self_mass_v<CostFn>;
 
-  double cum_target1 = 0.0;
+  CompScalar cum_target1{0};
   int64_t cum_scaled_prev1 = 0;
-  double cum_target2 = 0.0;
+  CompScalar cum_target2{0};
   int64_t cum_scaled_prev2 = 0;
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double v1 = static_cast<double>(h1.data()[i]);
-    const double v2 = static_cast<double>(h2.data()[i]);
-    const double self_mass = do_extract_self_mass ? std::min(v1, v2) : 0.0;
+    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
+    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
+    const CompScalar self_mass =
+        do_extract_self_mass ? std::min(v1, v2) : CompScalar{0};
 
     cum_target1 += v1 - self_mass;
     const int64_t cum_scaled1 = std::llround(cum_target1 * scale);
@@ -507,8 +512,8 @@ template <std::size_t Dim, std::floating_point Scalar,
         graph, capacity, cost, supply_map, flow_adj_ptr);
   }
 
-  const CompScalar total_cost = static_cast<CompScalar>(raw_optimal_cost) /
-                                static_cast<CompScalar>(scale);
+  const CompScalar total_cost =
+      static_cast<CompScalar>(raw_optimal_cost) / scale;
 
   spdlog::info("dpartion LEMON solve took {:.3f} ms",
                phase_timer.elapsed_milliseconds());
@@ -521,10 +526,10 @@ template <std::size_t Dim, std::floating_point Scalar,
 
     if constexpr (do_extract_self_mass) {
       for (std::size_t i = 0; i < n_nodes; ++i) {
-        const double self_mass =
-            std::min(static_cast<double>(h1.data()[i]),
-                     static_cast<double>(h2.data()[i]));
-        if (self_mass > 0.0) {
+        const CompScalar self_mass =
+            std::min(static_cast<CompScalar>(h1.data()[i]),
+                     static_cast<CompScalar>(h2.data()[i]));
+        if (self_mass > CompScalar{0}) {
           plan->source.push_back(static_cast<uint32_t>(i));
           plan->target.push_back(static_cast<uint32_t>(i));
           plan->flow.push_back(self_mass);
@@ -582,7 +587,7 @@ template <std::size_t Dim, std::floating_point Scalar,
         const std::size_t dst_bin = target_node - layer_dim_offset;
         plan->source.push_back(static_cast<uint32_t>(src));
         plan->target.push_back(static_cast<uint32_t>(dst_bin));
-        plan->flow.push_back(static_cast<double>(bottleneck) / scale);
+        plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
       }
     }
     spdlog::info("dpartion plan extraction took {:.3f} ms",
@@ -603,8 +608,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     GroundMetric metric,
     McfLemonAlgorithm algo = McfLemonAlgorithm::NetworkSimplex,
-    SparseTransportPlan* plan = nullptr, double scale = 1e6,
-    double mass_tol = 1e-6) {
+    SparseTransportPlanPtr<CompScalar> plan = nullptr,
+    CompScalar scale = static_cast<CompScalar>(1e6),
+    CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   if (metric == GroundMetric::SqEuclidean) {
     return mcf_dpartion<Dim, Scalar, CompScalar>(
         h1, h2, SqEuclideanCost{}, algo, plan, scale, mass_tol);
@@ -620,8 +626,9 @@ template <std::size_t Dim, std::floating_point Scalar,
 [[nodiscard]] CompScalar mcf_dpartion(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     McfLemonAlgorithm algo = McfLemonAlgorithm::NetworkSimplex,
-    SparseTransportPlan* plan = nullptr, double scale = 1e6,
-    double mass_tol = 1e-6) {
+    SparseTransportPlanPtr<CompScalar> plan = nullptr,
+    CompScalar scale = static_cast<CompScalar>(1e6),
+    CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   return mcf_dpartion<Dim, Scalar, CompScalar>(
       h1, h2, GroundMetric::L1, algo, plan, scale, mass_tol);
 }

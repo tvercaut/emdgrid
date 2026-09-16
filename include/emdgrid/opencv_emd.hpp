@@ -416,7 +416,9 @@ struct EmdSolver {
     return 0;
   }
 
-  // Total weighted cost from the current basis.
+  // Total weighted cost from the current basis. The accumulator is double
+  // regardless of the caller's CompScalar: the basis values are float, and
+  // summing them in double simply avoids losing digits in the reduction.
   [[nodiscard]] float calc_flow() const {
     double total = 0.0;
     for (const EmdNode2D* node = x_nodes.data(); node != end_x; ++node) {
@@ -429,7 +431,11 @@ struct EmdSolver {
   }
 
   // Fill a SparseTransportPlan from the current basis.
-  void extract_plan(SparseTransportPlan& plan) const {
+  //
+  // The simplex itself runs in float (faithful port of OpenCV's emd_new.cpp);
+  // CompScalar only controls the type the flows are reported in.
+  template <std::floating_point CompScalar>
+  void extract_plan(SparseTransportPlan<CompScalar>& plan) const {
     for (const EmdNode2D* node = x_nodes.data(); node != end_x; ++node) {
       if (node->val <= 0.F) {
         continue;
@@ -441,7 +447,7 @@ struct EmdSolver {
       }
       plan.source.push_back(static_cast<uint32_t>(oi));
       plan.target.push_back(static_cast<uint32_t>(oj));
-      plan.flow.push_back(static_cast<double>(node->val));
+      plan.flow.push_back(static_cast<CompScalar>(node->val));
     }
   }
 };
@@ -483,14 +489,17 @@ struct EmdSolver {
 /// @tparam Dim        Grid dimensionality (>= 1).
 /// @tparam Scalar     Input histogram scalar type.
 /// @tparam CostFn     Callable: (Coordinates, Coordinates) -> float.
-/// @tparam CompScalar Result type (default double).
+/// @tparam CompScalar Scalar type used to report the cost and plan flows
+///                    (default: double). The transportation simplex itself is
+///                    a faithful port of OpenCV's single-precision code and
+///                    always computes in float.
 template <std::size_t Dim, std::floating_point Scalar, typename CostFn,
           std::floating_point CompScalar = double>
-  requires(Dim >= 1)
+  requires(Dim >= 1 && detail::ValidCostFn<CostFn>)
 [[nodiscard]] CompScalar opencv_emd(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
-    CostFn&& cost_fn, SparseTransportPlan* plan = nullptr,
-    double mass_tol = 1e-6) {
+    CostFn&& cost_fn, SparseTransportPlanPtr<CompScalar> plan = nullptr,
+    CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   using Coords = GridLayout<Dim>::Coordinates;
 
   if (h1.layout().shape() != h2.layout().shape()) {
@@ -500,18 +509,19 @@ template <std::size_t Dim, std::floating_point Scalar, typename CostFn,
   const auto& layout = h1.layout();
   const std::size_t n_nodes = layout.node_count();
 
-  double t1 = 0.0;
-  double t2 = 0.0;
+  CompScalar t1{0};
+  CompScalar t2{0};
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double v1 = static_cast<double>(h1.data()[i]);
-    const double v2 = static_cast<double>(h2.data()[i]);
-    if (v1 < 0.0 || v2 < 0.0) {
+    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
+    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
+    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
       throw std::invalid_argument("histograms must be nonnegative");
     }
     t1 += v1;
     t2 += v2;
   }
-  if (std::abs(t1 - 1.0) > mass_tol || std::abs(t2 - 1.0) > mass_tol) {
+  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
+      std::abs(t2 - CompScalar{1}) > mass_tol) {
     throw std::invalid_argument("expected unit-mass histograms");
   }
 
@@ -566,7 +576,7 @@ template <std::size_t Dim, std::floating_point Scalar, typename CostFn,
   const float raw = solver.solve(sig1, sig2, cost_mat, idx1, idx2);
 
   if (plan != nullptr) {
-    solver.extract_plan(*plan);
+    solver.template extract_plan<CompScalar>(*plan);
   }
 
   return static_cast<CompScalar>(raw);
@@ -580,7 +590,8 @@ template <std::size_t Dim, std::floating_point Scalar,
 [[nodiscard]] CompScalar opencv_emd(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     GroundMetric metric = GroundMetric::L1,
-    SparseTransportPlan* plan = nullptr, double mass_tol = 1e-6) {
+    SparseTransportPlanPtr<CompScalar> plan = nullptr,
+    CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   using Coords = GridLayout<Dim>::Coordinates;
   using CostFn = std::function<float(const Coords&, const Coords&)>;
 

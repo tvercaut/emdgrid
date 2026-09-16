@@ -22,7 +22,7 @@ namespace {
 template <std::size_t Dim>
 double emd_l1_impl(const py::array_t<double, py::array::c_style>& h1,
                    const py::array_t<double, py::array::c_style>& h2,
-                   emdgrid::SparseTransportPlan* plan = nullptr,
+                   emdgrid::SparseTransportPlan<>* plan = nullptr,
                    int max_iter = 500000) {
   if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
       h2.ndim() != static_cast<py::ssize_t>(Dim)) {
@@ -55,8 +55,8 @@ py::object emd_l1_py(const py::array_t<double, py::array::c_style>& h1,
         "h1 and h2 must have the same number of dimensions");
   }
 
-  emdgrid::SparseTransportPlan plan;
-  emdgrid::SparseTransportPlan* plan_ptr =
+  emdgrid::SparseTransportPlan<> plan;
+  emdgrid::SparseTransportPlan<>* plan_ptr =
       return_transport_plan ? &plan : nullptr;
 
   double cost = 0.0;
@@ -103,8 +103,8 @@ py::object emd_sqeuclidean_1d_py(
         "emd_sqeuclidean_1d only supports 1-dimensional histograms");
   }
 
-  emdgrid::SparseTransportPlan plan;
-  emdgrid::SparseTransportPlan* plan_ptr =
+  emdgrid::SparseTransportPlan<> plan;
+  emdgrid::SparseTransportPlan<>* plan_ptr =
       return_transport_plan ? &plan : nullptr;
 
   emdgrid::GridLayout<1>::Shape shape{
@@ -140,7 +140,7 @@ template <std::size_t Dim>
 double greedy_emd_l1_approx_impl(
     const py::array_t<double, py::array::c_style>& h1,
     const py::array_t<double, py::array::c_style>& h2,
-    emdgrid::SparseTransportPlan* plan = nullptr) {
+    emdgrid::SparseTransportPlan<>* plan = nullptr) {
   if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
       h2.ndim() != static_cast<py::ssize_t>(Dim)) {
     throw std::invalid_argument("array dimensionality does not match Dim");
@@ -167,8 +167,8 @@ py::object greedy_emd_l1_approx_py(
         "h1 and h2 must have the same number of dimensions");
   }
 
-  emdgrid::SparseTransportPlan plan;
-  emdgrid::SparseTransportPlan* plan_ptr =
+  emdgrid::SparseTransportPlan<> plan;
+  emdgrid::SparseTransportPlan<>* plan_ptr =
       return_transport_plan ? &plan : nullptr;
 
   double cost = 0.0;
@@ -254,7 +254,7 @@ double knothe_rosenblatt_impl(
     const py::array_t<double, py::array::c_style>& h2,
     emdgrid::GroundMetric metric,
     std::span<const std::size_t> dimension_order,
-    emdgrid::SparseTransportPlan* plan = nullptr) {
+    emdgrid::SparseTransportPlan<>* plan = nullptr) {
   if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
       h2.ndim() != static_cast<py::ssize_t>(Dim)) {
     throw std::invalid_argument("array dimensionality does not match Dim");
@@ -289,8 +289,8 @@ py::object knothe_rosenblatt_py(
     dimension_order = dimension_order_obj.cast<std::vector<std::size_t>>();
   }
 
-  emdgrid::SparseTransportPlan plan;
-  emdgrid::SparseTransportPlan* plan_ptr =
+  emdgrid::SparseTransportPlan<> plan;
+  emdgrid::SparseTransportPlan<>* plan_ptr =
       return_transport_plan ? &plan : nullptr;
 
   double cost = 0.0;
@@ -340,7 +340,7 @@ double dpartion_impl(
     const py::array_t<double, py::array::c_style>& h2,
     emdgrid::GroundMetric metric,
     emdgrid::McfLemonAlgorithm algo,
-    emdgrid::SparseTransportPlan* plan = nullptr) {
+    emdgrid::SparseTransportPlan<>* plan = nullptr) {
   if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
       h2.ndim() != static_cast<py::ssize_t>(Dim)) {
     throw std::invalid_argument("array dimensionality does not match Dim");
@@ -372,8 +372,8 @@ py::object dpartion_py(
   const emdgrid::McfLemonAlgorithm algo =
       parse_mcf_lemon_algorithm(algo_obj);
 
-  emdgrid::SparseTransportPlan plan;
-  emdgrid::SparseTransportPlan* plan_ptr =
+  emdgrid::SparseTransportPlan<> plan;
+  emdgrid::SparseTransportPlan<>* plan_ptr =
       return_transport_plan ? &plan : nullptr;
 
   double cost = 0.0;
@@ -417,7 +417,7 @@ double opencv_emd_impl(
     const py::array_t<double, py::array::c_style>& h1,
     const py::array_t<double, py::array::c_style>& h2,
     emdgrid::GroundMetric metric,
-    emdgrid::SparseTransportPlan* plan = nullptr) {
+    emdgrid::SparseTransportPlan<>* plan = nullptr) {
   if (h1.ndim() != static_cast<py::ssize_t>(Dim) ||
       h2.ndim() != static_cast<py::ssize_t>(Dim)) {
     throw std::invalid_argument("array dimensionality does not match Dim");
@@ -446,8 +446,8 @@ py::object opencv_emd_py(
 
   const emdgrid::GroundMetric metric = parse_ground_metric(metric_obj);
 
-  emdgrid::SparseTransportPlan plan;
-  emdgrid::SparseTransportPlan* plan_ptr =
+  emdgrid::SparseTransportPlan<> plan;
+  emdgrid::SparseTransportPlan<>* plan_ptr =
       return_transport_plan ? &plan : nullptr;
 
   double cost = 0.0;
@@ -489,11 +489,11 @@ PYBIND11_MODULE(pyemdgrid, module) {
   module.doc() = "Python bindings for emdgrid";
   module.def("version", []() { return std::string(emdgrid::version()); });
 
-  py::class_<emdgrid::SparseTransportPlan>(module, "SparseTransportPlan")
+  py::class_<emdgrid::SparseTransportPlan<>>(module, "SparseTransportPlan")
       .def(py::init<>())
-      .def_readwrite("source", &emdgrid::SparseTransportPlan::source)
-      .def_readwrite("target", &emdgrid::SparseTransportPlan::target)
-      .def_readwrite("flow", &emdgrid::SparseTransportPlan::flow);
+      .def_readwrite("source", &emdgrid::SparseTransportPlan<>::source)
+      .def_readwrite("target", &emdgrid::SparseTransportPlan<>::target)
+      .def_readwrite("flow", &emdgrid::SparseTransportPlan<>::flow);
 
   module.def(
       "emd_l1", &emd_l1_py,

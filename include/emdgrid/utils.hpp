@@ -9,12 +9,43 @@
 #include <numeric>
 #include <random>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 namespace emdgrid {
 
 /// Ground metric choice for optimal transport problems.
 enum class GroundMetric : std::uint8_t { L1, SqEuclidean };
+
+/// Tolerance below which a residual mass is considered exhausted.
+///
+/// The value tracks the resolution of the computation type: 1e-12 keeps the
+/// historical behaviour in double precision, while a float computation needs
+/// a threshold above its own rounding noise (~1e-7 relative) so that greedy
+/// mass-splitting loops terminate instead of emitting denormal leftovers.
+template <std::floating_point CompScalar>
+inline constexpr CompScalar residual_mass_epsilon =
+    std::is_same_v<CompScalar, float> ? static_cast<CompScalar>(1e-6)
+                                      : static_cast<CompScalar>(1e-12);
+
+/// Default tolerance on the deviation of a histogram total mass from one.
+///
+/// Summing n bins accumulates O(n) rounding errors, so the unit-mass check
+/// must be looser than the computation type's epsilon. 1e-6 is comfortable
+/// for double; float needs 1e-4 to accept histograms of a few thousand bins.
+template <std::floating_point CompScalar>
+inline constexpr CompScalar default_mass_tolerance =
+    std::is_same_v<CompScalar, float> ? static_cast<CompScalar>(1e-4)
+                                      : static_cast<CompScalar>(1e-6);
+
+namespace detail {
+
+/// Rejects the overload-selector enums so that a cost-functor overload never
+/// competes with the `GroundMetric` overload of the same solver.
+template <typename T>
+concept ValidCostFn = !std::is_same_v<std::decay_t<T>, GroundMetric>;
+
+}  // namespace detail
 
 /// Default cost functor for L1 (Manhattan) ground metric.
 struct L1Cost {
