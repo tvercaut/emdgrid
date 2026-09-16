@@ -14,19 +14,10 @@
 #include "emdgrid/detail/potlemon/sparse_bipartitegraph.h"
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/grid_detail.hpp"
+#include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
-
-namespace detail {
-
-/// Edge in the grid-flow adjacency list used for plan decomposition.
-struct PotlemonFlowEdge {
-  uint32_t head;
-  int64_t flow;
-};
-
-}  // namespace detail
 
 /// EMD-L1 for multi-dimensional grid histograms solved via the potlemon
 /// Network Simplex solver.
@@ -70,31 +61,8 @@ template <std::size_t Dim, std::floating_point Scalar,
     detail::emit_self_mass(h1, h2, plan);
   }
 
-  // Integer net supply per node via cumulative rounding (keeps total == 0).
-  std::vector<int64_t> node_supply(n_nodes, 0);
-  CompScalar cum{0};
-  int64_t cum_scaled_prev = 0;
-  int64_t max_abs_supply = -1;
-  std::size_t max_abs_idx = 0;
-
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-
-    cum += v1 - v2;
-    const int64_t cum_scaled = std::llround(cum * scale);
-    node_supply[i] = cum_scaled - cum_scaled_prev;
-    cum_scaled_prev = cum_scaled;
-    if (std::abs(node_supply[i]) > max_abs_supply) {
-      max_abs_supply = std::abs(node_supply[i]);
-      max_abs_idx = i;
-    }
-  }
-
-  // Correct any residual rounding error.
-  if (cum_scaled_prev != 0) {
-    node_supply[max_abs_idx] -= cum_scaled_prev;
-  }
+  const std::vector<int64_t> node_supply =
+      detail::quantize_net_supply(h1, h2, scale);
 
   bool any_nonzero = false;
   for (std::size_t i = 0; i < n_nodes; ++i) {
@@ -156,7 +124,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   // same path-tracing strategy as mcf_lemon_l1: repeatedly trace from each
   // source along edges with remaining flow to a sink, record the bottleneck,
   // and subtract it from the path.
-  std::vector<std::vector<detail::PotlemonFlowEdge>> flow_adj(n_nodes);
+  std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
   for (int64_t k = 0; k < total_arcs; ++k) {
     const Digraph::Arc a = Digraph::arcFromId(k);
     const int64_t f = net.flow(a);

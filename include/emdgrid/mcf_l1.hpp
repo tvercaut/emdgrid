@@ -62,6 +62,7 @@
 
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/grid_detail.hpp"
+#include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -90,41 +91,9 @@ template <std::size_t Dim, std::floating_point Scalar,
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
-  std::vector<int64_t> supply(n_nodes);
-  std::size_t max_abs_idx = 0;
-  int64_t max_abs_val = -1;
-
-  CompScalar cum_target{0};
-  int64_t cum_scaled_prev = 0;
-
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar diff = static_cast<CompScalar>(h1.data()[i]) -
-                            static_cast<CompScalar>(h2.data()[i]);
-    cum_target += diff;
-    const int64_t cum_scaled = std::llround(cum_target * scale);
-    const int64_t s = cum_scaled - cum_scaled_prev;
-    supply[i] = s;
-    cum_scaled_prev = cum_scaled;
-
-    const int64_t abs_s = std::abs(s);
-    if (abs_s > max_abs_val) {
-      max_abs_val = abs_s;
-      max_abs_idx = i;
-    }
-  }
-
-  // Fix rounding drift so total supply sums to exactly 0
-  if (cum_scaled_prev != 0) {
-    supply[max_abs_idx] -= cum_scaled_prev;
-  }
-
-  int64_t total_pos_supply = 0;
-  for (const int64_t s : supply) {
-    if (s > 0) {
-      total_pos_supply += s;
-    }
-  }
-  const int64_t cap_val = std::max<int64_t>(total_pos_supply, 1);
+  const std::vector<int64_t> supply =
+      detail::quantize_net_supply(h1, h2, scale);
+  const int64_t cap_val = detail::total_positive_supply(supply);
 
   operations_research::SimpleMinCostFlow mcf;
 
@@ -171,12 +140,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 
     detail::emit_self_mass(h1, h2, plan);
 
-    struct FlowEdge {
-      uint32_t head;
-      int64_t flow;
-    };
-
-    std::vector<std::vector<FlowEdge>> flow_adj(n_nodes);
+    std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
     for (int a = 0; a < mcf.NumArcs(); ++a) {
       const int64_t f = mcf.Flow(a);
       if (f > 0) {

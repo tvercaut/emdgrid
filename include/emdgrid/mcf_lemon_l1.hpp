@@ -29,6 +29,7 @@
 
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/grid_detail.hpp"
+#include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -57,12 +58,6 @@ constexpr bool should_extract_self_mass_v = []() {
     return false;
   }
 }();
-
-/// Edge with target node and positive flow value.
-struct FlowEdge {
-  uint32_t head;
-  int64_t flow;
-};
 
 /// Shared helper to solve LEMON Min-Cost Flow and collect flow edges.
 template <typename Solver, typename Graph>
@@ -118,41 +113,9 @@ template <std::size_t Dim, std::floating_point Scalar,
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
-  std::vector<int64_t> supply(n_nodes);
-  std::size_t max_abs_idx = 0;
-  int64_t max_abs_val = -1;
-
-  CompScalar cum_target{0};
-  int64_t cum_scaled_prev = 0;
-
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar diff = static_cast<CompScalar>(h1.data()[i]) -
-                            static_cast<CompScalar>(h2.data()[i]);
-    cum_target += diff;
-    const int64_t cum_scaled = std::llround(cum_target * scale);
-    const int64_t s = cum_scaled - cum_scaled_prev;
-    supply[i] = s;
-    cum_scaled_prev = cum_scaled;
-
-    const int64_t abs_s = std::abs(s);
-    if (abs_s > max_abs_val) {
-      max_abs_val = abs_s;
-      max_abs_idx = i;
-    }
-  }
-
-  // Fix rounding drift so total supply sums to exactly 0
-  if (cum_scaled_prev != 0) {
-    supply[max_abs_idx] -= cum_scaled_prev;
-  }
-
-  int64_t total_pos_supply = 0;
-  for (const int64_t s : supply) {
-    if (s > 0) {
-      total_pos_supply += s;
-    }
-  }
-  const int64_t cap_val = std::max<int64_t>(total_pos_supply, 1);
+  const std::vector<int64_t> supply =
+      detail::quantize_net_supply(h1, h2, scale);
+  const int64_t cap_val = detail::total_positive_supply(supply);
 
   using Graph = lemon::SmartDigraph;
   using Node = Graph::Node;
@@ -328,10 +291,8 @@ template <std::size_t Dim, std::floating_point Scalar,
   constexpr bool do_extract_self_mass =
       detail::should_extract_self_mass_v<CostFn>;
 
-  CompScalar cum_target1{0};
-  int64_t cum_scaled_prev1 = 0;
-  CompScalar cum_target2{0};
-  int64_t cum_scaled_prev2 = 0;
+  detail::CumulativeQuantizer<CompScalar> quantizer1(scale);
+  detail::CumulativeQuantizer<CompScalar> quantizer2(scale);
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
@@ -339,15 +300,8 @@ template <std::size_t Dim, std::floating_point Scalar,
     const CompScalar self_mass =
         do_extract_self_mass ? std::min(v1, v2) : CompScalar{0};
 
-    cum_target1 += v1 - self_mass;
-    const int64_t cum_scaled1 = std::llround(cum_target1 * scale);
-    const int64_t s1 = cum_scaled1 - cum_scaled_prev1;
-    cum_scaled_prev1 = cum_scaled1;
-
-    cum_target2 += v2 - self_mass;
-    const int64_t cum_scaled2 = std::llround(cum_target2 * scale);
-    const int64_t s2 = -(cum_scaled2 - cum_scaled_prev2);
-    cum_scaled_prev2 = cum_scaled2;
+    const int64_t s1 = quantizer1.push(v1 - self_mass);
+    const int64_t s2 = -quantizer2.push(v2 - self_mass);
 
     supply[i] = s1;
     const int64_t abs_s1 = std::abs(s1);
@@ -364,18 +318,17 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
 
-  const int64_t total_supply_sum = cum_scaled_prev1 - cum_scaled_prev2;
+  // Drift is charged to the largest-magnitude supply, tracked above across
+  // both layers; detail::absorb_quantization_drift is not used here because a
+  // linear scan of `supply` would visit the two layers in a different order
+  // and so break ties differently.
+  const int64_t total_supply_sum =
+      quantizer1.scaled_total() - quantizer2.scaled_total();
   if (total_supply_sum != 0) {
     supply[max_abs_idx] -= total_supply_sum;
   }
 
-  int64_t total_pos_supply = 0;
-  for (const int64_t s : supply) {
-    if (s > 0) {
-      total_pos_supply += s;
-    }
-  }
-  const int64_t cap_val = std::max<int64_t>(total_pos_supply, 1);
+  const int64_t cap_val = detail::total_positive_supply(supply);
 
   spdlog::info("dpartion supply setup took {:.3f} ms",
                phase_timer.elapsed_milliseconds());
