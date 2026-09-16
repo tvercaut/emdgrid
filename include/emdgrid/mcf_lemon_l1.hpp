@@ -221,16 +221,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->target.clear();
     plan->flow.clear();
 
-    for (std::size_t i = 0; i < n_nodes; ++i) {
-      const CompScalar self_mass =
-          std::min(static_cast<CompScalar>(h1.data()[i]),
-                   static_cast<CompScalar>(h2.data()[i]));
-      if (self_mass > CompScalar{0}) {
-        plan->source.push_back(static_cast<uint32_t>(i));
-        plan->target.push_back(static_cast<uint32_t>(i));
-        plan->flow.push_back(self_mass);
-      }
-    }
+    detail::emit_self_mass(h1, h2, plan);
 
     std::vector<int64_t> rem_supply = supply;
     std::vector<std::size_t> ptr(n_nodes, 0);
@@ -476,16 +467,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->flow.clear();
 
     if constexpr (do_extract_self_mass) {
-      for (std::size_t i = 0; i < n_nodes; ++i) {
-        const CompScalar self_mass =
-            std::min(static_cast<CompScalar>(h1.data()[i]),
-                     static_cast<CompScalar>(h2.data()[i]));
-        if (self_mass > CompScalar{0}) {
-          plan->source.push_back(static_cast<uint32_t>(i));
-          plan->target.push_back(static_cast<uint32_t>(i));
-          plan->flow.push_back(self_mass);
-        }
-      }
+      detail::emit_self_mass(h1, h2, plan);
     }
 
     std::vector<int64_t> rem_supply = supply;

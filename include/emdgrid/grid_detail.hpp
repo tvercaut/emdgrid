@@ -27,6 +27,30 @@ template <std::size_t Dim>
   return strides;
 }
 
+/// Appends the mass each bin already shares with itself to `plan`.
+///
+/// For a subadditive ground metric the mass `min(h1[i], h2[i])` never needs to
+/// move, so solvers route only the residual and re-attach these diagonal
+/// entries when reporting the plan. Entries are appended, not assigned, so the
+/// caller controls when the plan is cleared.
+template <std::size_t Dim, std::floating_point Scalar,
+          std::floating_point CompScalar>
+void emit_self_mass(const GridDataView<Dim, Scalar>& h1,
+                    const GridDataView<Dim, Scalar>& h2,
+                    SparseTransportPlan<CompScalar>* plan) {
+  const std::size_t n_nodes = h1.layout().node_count();
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    const CompScalar self_mass =
+        std::min(static_cast<CompScalar>(h1.data()[i]),
+                 static_cast<CompScalar>(h2.data()[i]));
+    if (self_mass > CompScalar{0}) {
+      plan->source.push_back(static_cast<uint32_t>(i));
+      plan->target.push_back(static_cast<uint32_t>(i));
+      plan->flow.push_back(self_mass);
+    }
+  }
+}
+
 /// Validates a pair of grid histograms shared by every grid solver.
 ///
 /// Checks that both views share a layout, that no bin is negative, and that

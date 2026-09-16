@@ -67,6 +67,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->source.clear();
     plan->target.clear();
     plan->flow.clear();
+    detail::emit_self_mass(h1, h2, plan);
   }
 
   // Integer net supply per node via cumulative rounding (keeps total == 0).
@@ -79,15 +80,6 @@ template <std::size_t Dim, std::floating_point Scalar,
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
     const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-
-    if (plan) {
-      const CompScalar self_mass = std::min(v1, v2);
-      if (self_mass > CompScalar{0}) {
-        plan->source.push_back(static_cast<uint32_t>(i));
-        plan->target.push_back(static_cast<uint32_t>(i));
-        plan->flow.push_back(self_mass);
-      }
-    }
 
     cum += v1 - v2;
     const int64_t cum_scaled = std::llround(cum * scale);
