@@ -88,7 +88,6 @@ template <std::size_t Dim, std::floating_point Scalar,
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
-  const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
   const std::vector<int64_t> supply =
@@ -97,25 +96,13 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   operations_research::SimpleMinCostFlow mcf;
 
-  const auto stride = detail::compute_grid_strides<Dim>(shape);
-
-  for (std::size_t a = 0; a < Dim; ++a) {
-    const std::size_t extent = shape[a];
-    if (extent < 2) {
-      continue;
-    }
-    const std::size_t st = stride[a];
-
-    for (std::size_t u = 0; u < n_nodes; ++u) {
-      if ((u / st) % extent < extent - 1) {
-        using NodeIdx = operations_research::SimpleMinCostFlow::NodeIndex;
-        const auto u_node = static_cast<NodeIdx>(u);
-        const auto v = static_cast<NodeIdx>(u + st);
-        mcf.AddArcWithCapacityAndUnitCost(u_node, v, cap_val, 1);
-        mcf.AddArcWithCapacityAndUnitCost(v, u_node, cap_val, 1);
-      }
-    }
-  }
+  detail::for_each_grid_arc(layout, [&](std::size_t u, std::size_t v) {
+    using NodeIdx = operations_research::SimpleMinCostFlow::NodeIndex;
+    const auto u_node = static_cast<NodeIdx>(u);
+    const auto v_node = static_cast<NodeIdx>(v);
+    mcf.AddArcWithCapacityAndUnitCost(u_node, v_node, cap_val, 1);
+    mcf.AddArcWithCapacityAndUnitCost(v_node, u_node, cap_val, 1);
+  });
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     if (supply[i] != 0) {

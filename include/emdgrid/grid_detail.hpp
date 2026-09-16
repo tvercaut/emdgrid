@@ -27,6 +27,32 @@ template <std::size_t Dim>
   return strides;
 }
 
+/// Invokes `fn(u, v)` for every axis-adjacent pair of grid cells, u < v.
+///
+/// Walks one axis at a time using the C-order strides, so no coordinate
+/// round-trip is needed per cell. Each undirected grid edge is visited exactly
+/// once; callers that need both directions emit two arcs per call.
+template <std::size_t Dim, class Fn>
+void for_each_grid_arc(const GridLayout<Dim>& layout, Fn&& fn) {
+  const auto& shape = layout.shape();
+  const std::size_t n_nodes = layout.node_count();
+  const auto stride = compute_grid_strides<Dim>(shape);
+
+  for (std::size_t axis = 0; axis < Dim; ++axis) {
+    const std::size_t extent = shape[axis];
+    if (extent < 2) {
+      continue;
+    }
+    const std::size_t st = stride[axis];
+
+    for (std::size_t u = 0; u < n_nodes; ++u) {
+      if ((u / st) % extent < extent - 1) {
+        fn(u, u + st);
+      }
+    }
+  }
+}
+
 /// Appends the mass each bin already shares with itself to `plan`.
 ///
 /// For a subadditive ground metric the mass `min(h1[i], h2[i])` never needs to

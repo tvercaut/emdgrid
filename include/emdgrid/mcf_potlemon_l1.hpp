@@ -51,7 +51,6 @@ template <std::size_t Dim, std::floating_point Scalar,
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
-  const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
   if (plan) {
@@ -79,20 +78,10 @@ template <std::size_t Dim, std::floating_point Scalar,
   using Digraph = potlemon::SparseDigraph;
   std::vector<std::pair<int, int>> edges;
 
-  for (std::size_t u = 0; u < n_nodes; ++u) {
-    const auto coords =
-        layout.coordinates(static_cast<std::ptrdiff_t>(u));
-    for (std::size_t axis = 0; axis < Dim; ++axis) {
-      if (coords[axis] + 1 < static_cast<std::ptrdiff_t>(shape[axis])) {
-        auto next_coords = coords;
-        ++next_coords[axis];
-        const std::size_t v =
-            static_cast<std::size_t>(layout.node(next_coords));
-        edges.emplace_back(static_cast<int>(u), static_cast<int>(v));
-        edges.emplace_back(static_cast<int>(v), static_cast<int>(u));
-      }
-    }
-  }
+  detail::for_each_grid_arc(layout, [&](std::size_t u, std::size_t v) {
+    edges.emplace_back(static_cast<int>(u), static_cast<int>(v));
+    edges.emplace_back(static_cast<int>(v), static_cast<int>(u));
+  });
 
   const int64_t total_arcs = static_cast<int64_t>(edges.size());
 

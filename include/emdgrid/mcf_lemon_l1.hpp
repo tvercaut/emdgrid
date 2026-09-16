@@ -110,7 +110,6 @@ template <std::size_t Dim, std::floating_point Scalar,
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
-  const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
   const std::vector<int64_t> supply =
@@ -134,29 +133,15 @@ template <std::size_t Dim, std::floating_point Scalar,
   Graph::ArcMap<int64_t> cost(graph);
   Graph::NodeMap<int64_t> supply_map(graph);
 
-  const auto stride = detail::compute_grid_strides<Dim>(shape);
+  detail::for_each_grid_arc(layout, [&](std::size_t u, std::size_t v) {
+    const Arc a1 = graph.addArc(nodes[u], nodes[v]);
+    capacity[a1] = cap_val;
+    cost[a1] = 1;
 
-  for (std::size_t a = 0; a < Dim; ++a) {
-    const std::size_t extent = shape[a];
-    if (extent < 2) {
-      continue;
-    }
-    const std::size_t st = stride[a];
-
-    for (std::size_t u = 0; u < n_nodes; ++u) {
-      if ((u / st) % extent < extent - 1) {
-        const std::size_t v = u + st;
-
-        const Arc a1 = graph.addArc(nodes[u], nodes[v]);
-        capacity[a1] = cap_val;
-        cost[a1] = 1;
-
-        const Arc a2 = graph.addArc(nodes[v], nodes[u]);
-        capacity[a2] = cap_val;
-        cost[a2] = 1;
-      }
-    }
-  }
+    const Arc a2 = graph.addArc(nodes[v], nodes[u]);
+    capacity[a2] = cap_val;
+    cost[a2] = 1;
+  });
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     supply_map[nodes[i]] = supply[i];
