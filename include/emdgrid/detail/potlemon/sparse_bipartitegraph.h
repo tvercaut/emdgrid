@@ -121,6 +121,12 @@ class SparseBipartiteDigraphBase {
   }
 
  public:
+  // Pre-build all lazily-initialised structures. Must be called in a serial
+  // context before any parallel iteration that uses firstIn/nextIn/nextOut.
+  void ensureAuxStructuresBuilt() const {
+    build_position_maps();
+  }
+
   virtual Node operator()(int ix) const { return Node(ix); }
   static int index(const Node& node) { return node; }
 

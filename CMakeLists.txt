@@ -115,9 +115,34 @@ target_link_libraries(emdgrid PUBLIC spdlog::spdlog ortools::ortools lemon::lemo
 
 option(EMDGRID_USE_OPENMP "Use OpenMP parallelization in the potlemon network simplex solver" ON)
 if(EMDGRID_USE_OPENMP)
+  # Apple Clang does not locate Homebrew's libomp automatically.
+  # Provide hints before find_package so CMake's FindOpenMP picks them up.
+  if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    find_program(BREW_EXECUTABLE brew)
+    if(BREW_EXECUTABLE)
+      execute_process(
+        COMMAND ${BREW_EXECUTABLE} --prefix libomp
+        OUTPUT_VARIABLE HOMEBREW_LIBOMP_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE BREW_LIBOMP_RESULT
+      )
+      if(BREW_LIBOMP_RESULT EQUAL 0 AND HOMEBREW_LIBOMP_PREFIX)
+        # Use -isystem so omp.h is treated as a system header (no warnings).
+        set(OpenMP_CXX_FLAGS
+            "-Xpreprocessor -fopenmp -isystem ${HOMEBREW_LIBOMP_PREFIX}/include")
+        set(OpenMP_CXX_LIB_NAMES "omp")
+        set(OpenMP_omp_LIBRARY "${HOMEBREW_LIBOMP_PREFIX}/lib/libomp.dylib")
+      endif()
+    endif()
+  endif()
   find_package(OpenMP)
   if(OpenMP_CXX_FOUND)
     target_link_libraries(emdgrid PUBLIC OpenMP::OpenMP_CXX)
+    # Define POTLEMON_OPENMP so the header includes <omp.h> only when the
+    # build system has set up the correct include paths (i.e. not just because
+    # the compiler happens to define _OPENMP via an unrelated -fopenmp flag).
+    target_compile_definitions(emdgrid PUBLIC POTLEMON_OPENMP=1)
     message(STATUS "OpenMP found and enabled (disable with -DEMDGRID_USE_OPENMP=OFF).")
   else()
     message(STATUS "OpenMP requested but not found on this system.")

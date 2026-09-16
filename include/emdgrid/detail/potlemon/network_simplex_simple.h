@@ -54,9 +54,11 @@
 #include <utility>
 #include <vector>
 
-#if defined(EMDGRID_USE_OPENMP) || defined(_OPENMP)
+// POTLEMON_OPENMP is set by the emdgrid CMake build when OpenMP is found.
+// It is NOT derived from _OPENMP to avoid including omp.h without a
+// proper include-directory set up by the build system.
+#ifdef POTLEMON_OPENMP
 #include <omp.h>
-#define POTLEMON_OPENMP 1
 #endif
 
 #include "emdgrid/detail/potlemon/sparse_bipartitegraph.h"
@@ -638,6 +640,16 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     ArcsType _block_size;
     ArcsType _next_arc;
     NetworkSimplexSimple& _ns;
+    // Fast path: direct references into the dense arrays. The arrays always
+    // exist; they are used only when _use_direct is true, which requires
+    // Dense endpoint+state storage and StoredArray/AllArcCosts cost mode.
+    // This matches the default SimplexOptions and lets the compiler vectorise
+    // the inner loop by removing all per-element branches.
+    const bool _use_direct;
+    const IntVector& _source_ref;
+    const IntVector& _target_ref;
+    const CostVector& _cost_ref;
+    const StateVector& _state_ref;
 
    public:
     explicit BlockSearchPivotRule(NetworkSimplexSimple& ns)
@@ -645,7 +657,16 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           _in_arc(ns.in_arc),
           _search_arc_num(ns._search_arc_num),
           _next_arc(0),
-          _ns(ns) {
+          _ns(ns),
+          _use_direct(
+              ns._endpoint_storage_mode == EndpointStorageMode::Dense &&
+              ns._cost_mode == CostMode::StoredArray &&
+              ns._cost_storage_mode == CostStorageMode::AllArcCosts &&
+              ns._state_storage_mode == StateStorageMode::Dense),
+          _source_ref(ns._source),
+          _target_ref(ns._target),
+          _cost_ref(ns._cost),
+          _state_ref(ns._state) {
       constexpr double BLOCK_SIZE_FACTOR = 1.0;
       constexpr ArcsType MIN_BLOCK_SIZE = 10;
       _block_size = std::max(
@@ -655,17 +676,87 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           MIN_BLOCK_SIZE);
     }
 
-    Cost getCost(ArcsType e) const { return _ns.getCostForArc(e); }
+    Cost getCost(ArcsType e) const {
+      if (_use_direct) {
+        return _cost_ref[e];
+      }
+      return _ns.getCostForArc(e);
+    }
+
+    // Reduced cost of arc ae. kDirect=true uses direct array member access,
+    // removing per-element branch overhead in the common Dense/AllArcCosts mode.
+    // kDirect=false uses the accessor API for non-default storage configurations.
+    template <bool kDirect>
+    Cost reducedCost(ArcsType ae) const {
+      if constexpr (kDirect) {
+        const int src = _source_ref[ae];
+        const int tgt = _target_ref[ae];
+        return static_cast<Cost>(_state_ref[ae]) *
+               (_cost_ref[ae] + _pi[src] - _pi[tgt]);
+      } else {
+        return _ns.arcState(ae) *
+               (getCost(ae) + _pi[_ns.arcSource(ae)] - _pi[_ns.arcTarget(ae)]);
+      }
+    }
+
+    double epsilonBound() const {
+      const double b =
+          std::abs(_pi[_ns.arcSource(_in_arc)]) >
+                  std::abs(_pi[_ns.arcTarget(_in_arc)])
+              ? std::abs(_pi[_ns.arcSource(_in_arc)])
+              : std::abs(_pi[_ns.arcTarget(_in_arc)]);
+      return b > std::abs(getCost(_in_arc)) ? b : std::abs(getCost(_in_arc));
+    }
+
+    template <bool kDirect>
+    bool findEnteringArcImpl() {
+      Cost c = 0;
+      Cost min = 0;
+      ArcsType e = 0;
+      ArcsType cnt = _block_size;
+
+      for (e = _next_arc; e != _search_arc_num; ++e) {
+        c = reducedCost<kDirect>(e);
+        if (c < min) {
+          min = c;
+          _in_arc = e;
+        }
+        if (--cnt == 0) {
+          if (min < -POTLEMON_EPSILON * epsilonBound()) {
+            goto search_end;
+          }
+          cnt = _block_size;
+        }
+      }
+      for (e = 0; e != _next_arc; ++e) {
+        c = reducedCost<kDirect>(e);
+        if (c < min) {
+          min = c;
+          _in_arc = e;
+        }
+        if (--cnt == 0) {
+          if (min < -POTLEMON_EPSILON * epsilonBound()) {
+            goto search_end;
+          }
+          cnt = _block_size;
+        }
+      }
+      if (min >= -POTLEMON_EPSILON * epsilonBound()) {
+        return false;
+      }
+
+    search_end:
+      _next_arc = e;
+      return true;
+    }
 
     bool findEnteringArc() {
 #ifdef POTLEMON_OPENMP
-      // Parallel block-search pivot: scan arcs in blocks of _block_size,
-      // parallelising within each block. Mirrors nbonneel's OpenMP version
-      // (github.com/nbonneel/network_simplex) adapted to our accessor API.
+      // Parallel block-search pivot.
       const int num_threads = omp_get_max_threads();
       std::vector<Cost> min_t(static_cast<std::size_t>(num_threads), Cost(0));
       std::vector<ArcsType> arc_t(static_cast<std::size_t>(num_threads),
-                                  in_arc);
+                                  _in_arc);
       const ArcsType bs = static_cast<ArcsType>(
           std::ceil(_block_size / static_cast<double>(num_threads)));
 
@@ -683,11 +774,11 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 #pragma omp for schedule(static, bs) lastprivate(last_e)
           for (ArcsType j = 0; j < block_len; ++j) {
             ArcsType e = _next_arc + i + j;
-            if (e >= _search_arc_num) e -= _search_arc_num;
+            if (e >= _search_arc_num) {
+              e -= _search_arc_num;
+            }
             last_e = e;
-            Cost c =
-                _ns.arcState(e) *
-                (getCost(e) + _pi[_ns.arcSource(e)] - _pi[_ns.arcTarget(e)]);
+            const Cost c = reducedCost<false>(e);
             if (c < min_t[static_cast<std::size_t>(t)]) {
               min_t[static_cast<std::size_t>(t)] = c;
               arc_t[static_cast<std::size_t>(t)] = e;
@@ -702,14 +793,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           }
         }
         if (min_val < Cost(0)) {
-          const double a =
-              std::abs(_pi[_ns.arcSource(_in_arc)]) >
-                      std::abs(_pi[_ns.arcTarget(_in_arc)])
-                  ? std::abs(_pi[_ns.arcSource(_in_arc)])
-                  : std::abs(_pi[_ns.arcTarget(_in_arc)]);
-          const double a2 =
-              a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-          if (min_val < -POTLEMON_EPSILON * a2) {
+          if (min_val < -POTLEMON_EPSILON * epsilonBound()) {
             next_arc_out = last_e;
             _next_arc = next_arc_out;
             return true;
@@ -717,71 +801,15 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         }
       }
       // Full scan complete without early exit.
-      if (min_val >= Cost(0)) return false;
-      const double a =
-          std::abs(_pi[_ns.arcSource(_in_arc)]) >
-                  std::abs(_pi[_ns.arcTarget(_in_arc)])
-              ? std::abs(_pi[_ns.arcSource(_in_arc)])
-              : std::abs(_pi[_ns.arcTarget(_in_arc)]);
-      const double a2 =
-          a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-      return min_val < -POTLEMON_EPSILON * a2;
-#else
-      Cost c = 0;
-      Cost min = 0;
-      ArcsType e = 0;
-      ArcsType cnt = _block_size;
-      double a = 0.0;
-      for (e = _next_arc; e != _search_arc_num; ++e) {
-        c = _ns.arcState(e) *
-            (getCost(e) + _pi[_ns.arcSource(e)] - _pi[_ns.arcTarget(e)]);
-        if (c < min) {
-          min = c;
-          _in_arc = e;
-        }
-        if (--cnt == 0) {
-          a = std::abs(_pi[_ns.arcSource(_in_arc)]) >
-                      std::abs(_pi[_ns.arcTarget(_in_arc)])
-                  ? std::abs(_pi[_ns.arcSource(_in_arc)])
-                  : std::abs(_pi[_ns.arcTarget(_in_arc)]);
-          a = a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-          if (min < -POTLEMON_EPSILON * a) {
-            goto search_end;
-          }
-          cnt = _block_size;
-        }
-      }
-      for (e = 0; e != _next_arc; ++e) {
-        c = _ns.arcState(e) *
-            (getCost(e) + _pi[_ns.arcSource(e)] - _pi[_ns.arcTarget(e)]);
-        if (c < min) {
-          min = c;
-          _in_arc = e;
-        }
-        if (--cnt == 0) {
-          a = std::abs(_pi[_ns.arcSource(_in_arc)]) >
-                      std::abs(_pi[_ns.arcTarget(_in_arc)])
-                  ? std::abs(_pi[_ns.arcSource(_in_arc)])
-                  : std::abs(_pi[_ns.arcTarget(_in_arc)]);
-          a = a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-          if (min < -POTLEMON_EPSILON * a) {
-            goto search_end;
-          }
-          cnt = _block_size;
-        }
-      }
-      a = std::abs(_pi[_ns.arcSource(_in_arc)]) >
-                  std::abs(_pi[_ns.arcTarget(_in_arc)])
-              ? std::abs(_pi[_ns.arcSource(_in_arc)])
-              : std::abs(_pi[_ns.arcTarget(_in_arc)]);
-      a = a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
-      if (min >= -POTLEMON_EPSILON * a) {
+      if (min_val >= Cost(0)) {
         return false;
       }
-
-    search_end:
-      _next_arc = e;
-      return true;
+      return min_val < -POTLEMON_EPSILON * epsilonBound();
+#else
+      if (_use_direct) {
+        return findEnteringArcImpl<true>();
+      }
+      return findEnteringArcImpl<false>();
 #endif
     }
   };
@@ -1903,6 +1931,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         // Pre-allocate so indexed writes are thread-safe; erase sentinels after.
         arc_vector.assign(demand_nodes.size(), INVALID_ARC);
 #ifdef POTLEMON_OPENMP
+        // firstIn/nextIn use lazy-initialised structures; pre-build them here
+        // in a serial context so the parallel loop below sees them as ready.
+        _graph.ensureAuxStructuresBuilt();
 #pragma omp parallel for schedule(static)
 #endif
         for (ArcsType i = 0; i < static_cast<ArcsType>(demand_nodes.size());
@@ -1930,6 +1961,9 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     } else {
       arc_vector.assign(supply_nodes.size(), INVALID_ARC);
 #ifdef POTLEMON_OPENMP
+      // nextOut uses lazy-initialised position maps; pre-build them here in a
+      // serial context so the parallel loop below sees them as ready.
+      _graph.ensureAuxStructuresBuilt();
 #pragma omp parallel for schedule(static)
 #endif
       for (ArcsType i = 0; i < static_cast<ArcsType>(supply_nodes.size());
