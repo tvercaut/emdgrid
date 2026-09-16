@@ -183,12 +183,26 @@ if(EMDGRID_USE_OPENMP)
         endforeach()
       endif()
       if(_gcc_omp_h)
-        # Isolate just omp.h so clang-tidy sees it without the GCC-specific
-        # intrinsic headers that live alongside it in the same directory.
+        # GCC's omp.h uses __malloc__(dealloc, n) attribute syntax that clang
+        # does not support.  Write a minimal clang-compatible stub instead so
+        # clang-tidy can resolve the omp_* declarations it encounters.
         set(_omp_wrapper_dir "${CMAKE_BINARY_DIR}/clang-tidy-omp-include")
         file(MAKE_DIRECTORY "${_omp_wrapper_dir}")
-        file(COPY "${_gcc_omp_h}" DESTINATION "${_omp_wrapper_dir}")
-        message(STATUS "Providing isolated omp.h for clang-tidy: ${_gcc_omp_h}")
+        file(WRITE "${_omp_wrapper_dir}/omp.h"
+          "/* Minimal omp.h stub for clang-tidy (avoids GCC-specific attributes). */\n"
+          "#pragma once\n"
+          "#ifdef __cplusplus\nextern \"C\" {\n#endif\n"
+          "extern int  omp_get_thread_num(void);\n"
+          "extern int  omp_get_num_threads(void);\n"
+          "extern int  omp_get_max_threads(void);\n"
+          "extern int  omp_in_parallel(void);\n"
+          "extern int  omp_get_num_procs(void);\n"
+          "extern void omp_set_num_threads(int);\n"
+          "extern double omp_get_wtime(void);\n"
+          "extern double omp_get_wtick(void);\n"
+          "#ifdef __cplusplus\n}\n#endif\n"
+        )
+        message(STATUS "Generated clang-compatible omp.h stub for clang-tidy")
         # Patch CXX_CLANG_TIDY on emdgrid (already created above).
         set_property(TARGET emdgrid APPEND PROPERTY
           CXX_CLANG_TIDY "-extra-arg=-isystem${_omp_wrapper_dir}")
