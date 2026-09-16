@@ -32,11 +32,14 @@ cmake.args = [
 ]
 wheel.packages = []
 
+[tool.black]
+# Matches requires-python. Without it black infers a target from the
+# interpreter running it, which differs between a contributor's machine and
+# CI and makes it warn that it cannot verify its own output.
+target-version = ["py38"]
+
 [tool.ruff]
 line-length = 88
-# black in CI is installed without the `jupyter` extra and so skips notebooks;
-# keep ruff's scope identical rather than half-checking the Colab demo.
-extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # pyflakes and pycodestyle for correctness, isort for import order, pyupgrade
