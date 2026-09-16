@@ -10,22 +10,27 @@
 #include <vector>
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/utils.hpp"
 
 namespace emdgrid {
 
 namespace detail {
 
 /// Active 1-D monotone matching flow triple.
+///
+/// @tparam CompScalar Scalar type used for computation (default: double).
+template <std::floating_point CompScalar = double>
 struct MonotoneFlow {
   std::size_t src_idx{0};
   std::size_t tgt_idx{0};
-  double flow{0.0};
+  CompScalar flow{0};
 };
 
 /// Computes 1-D monotone transport matching between two 1-D mass distributions.
-inline void compute_1d_monotone_matching(
-    std::span<const double> u, std::span<const double> v,
-    std::vector<MonotoneFlow>* matching) {
+template <std::floating_point CompScalar>
+void compute_1d_monotone_matching(
+    std::span<const CompScalar> u, std::span<const CompScalar> v,
+    std::vector<MonotoneFlow<CompScalar>>* matching) {
   matching->clear();
   std::size_t i = 0;
   std::size_t j = 0;
@@ -35,26 +40,26 @@ inline void compute_1d_monotone_matching(
     return;
   }
 
-  double rem_u = u[0];
-  double rem_v = v[0];
-  constexpr double kEps = 1e-12;
+  CompScalar rem_u = u[0];
+  CompScalar rem_v = v[0];
+  constexpr CompScalar eps = residual_mass_epsilon<CompScalar>;
 
   while (i < n_u && j < n_v) {
-    if (rem_u <= kEps) {
+    if (rem_u <= eps) {
       ++i;
       if (i < n_u) {
         rem_u = u[i];
       }
       continue;
     }
-    if (rem_v <= kEps) {
+    if (rem_v <= eps) {
       ++j;
       if (j < n_v) {
         rem_v = v[j];
       }
       continue;
     }
-    const double transfer = std::min(rem_u, rem_v);
+    const CompScalar transfer = std::min(rem_u, rem_v);
     matching->push_back({i, j, transfer});
     rem_u -= transfer;
     rem_v -= transfer;
@@ -76,9 +81,9 @@ inline void compute_1d_monotone_matching(
 /// @tparam Scalar Input histogram scalar type.
 /// @tparam CompScalar Scalar type used for computation (default: double).
 template <std::floating_point Scalar, std::floating_point CompScalar = double>
-[[nodiscard]] CompScalar emd_1d(const GridDataView<1, Scalar>& h1,
-                                const GridDataView<1, Scalar>& h2,
-                                SparseTransportPlan* plan = nullptr) {
+[[nodiscard]] CompScalar emd_1d(
+    const GridDataView<1, Scalar>& h1, const GridDataView<1, Scalar>& h2,
+    SparseTransportPlanPtr<CompScalar> plan = nullptr) {
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -96,13 +101,13 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
     plan->target.clear();
     plan->flow.clear();
 
-    std::vector<double> s(n);
-    std::vector<double> d(n);
+    std::vector<CompScalar> s(n);
+    std::vector<CompScalar> d(n);
     for (std::size_t i = 0; i < n; ++i) {
-      double h1_val = static_cast<double>(h1.data()[i]);
-      double h2_val = static_cast<double>(h2.data()[i]);
-      double self_mass = std::min(h1_val, h2_val);
-      if (self_mass > 0.0) {
+      CompScalar h1_val = static_cast<CompScalar>(h1.data()[i]);
+      CompScalar h2_val = static_cast<CompScalar>(h2.data()[i]);
+      CompScalar self_mass = std::min(h1_val, h2_val);
+      if (self_mass > CompScalar{0}) {
         plan->source.push_back(static_cast<uint32_t>(i));
         plan->target.push_back(static_cast<uint32_t>(i));
         plan->flow.push_back(self_mass);
@@ -111,8 +116,8 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
       d[i] = h2_val - self_mass;
     }
 
-    std::vector<detail::MonotoneFlow> matching;
-    detail::compute_1d_monotone_matching(s, d, &matching);
+    std::vector<detail::MonotoneFlow<CompScalar>> matching;
+    detail::compute_1d_monotone_matching<CompScalar>(s, d, &matching);
     for (const auto& flow_pair : matching) {
       plan->source.push_back(static_cast<uint32_t>(flow_pair.src_idx));
       plan->target.push_back(static_cast<uint32_t>(flow_pair.tgt_idx));
@@ -135,7 +140,7 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
 [[nodiscard]] CompScalar emd_sqeuclidean_1d(
     const GridDataView<1, Scalar>& h1,
     const GridDataView<1, Scalar>& h2,
-    SparseTransportPlan* plan = nullptr) {
+    SparseTransportPlanPtr<CompScalar> plan = nullptr) {
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -147,21 +152,21 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
     plan->flow.clear();
   }
 
-  std::vector<double> s(n);
-  std::vector<double> d(n);
+  std::vector<CompScalar> s(n);
+  std::vector<CompScalar> d(n);
   for (std::size_t i = 0; i < n; ++i) {
-    s[i] = static_cast<double>(h1.data()[i]);
-    d[i] = static_cast<double>(h2.data()[i]);
+    s[i] = static_cast<CompScalar>(h1.data()[i]);
+    d[i] = static_cast<CompScalar>(h2.data()[i]);
   }
 
-  std::vector<detail::MonotoneFlow> matching;
-  detail::compute_1d_monotone_matching(s, d, &matching);
+  std::vector<detail::MonotoneFlow<CompScalar>> matching;
+  detail::compute_1d_monotone_matching<CompScalar>(s, d, &matching);
 
   CompScalar total{0};
   for (const auto& flow_pair : matching) {
-    const double dist = static_cast<double>(flow_pair.src_idx) -
-                        static_cast<double>(flow_pair.tgt_idx);
-    total += static_cast<CompScalar>(flow_pair.flow * dist * dist);
+    const CompScalar dist = static_cast<CompScalar>(flow_pair.src_idx) -
+                            static_cast<CompScalar>(flow_pair.tgt_idx);
+    total += flow_pair.flow * dist * dist;
 
     if (plan) {
       plan->source.push_back(static_cast<uint32_t>(flow_pair.src_idx));

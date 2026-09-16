@@ -90,7 +90,7 @@ TEST_CASE("mcf_potlemon_l1 2D: transport plan and cost reconstruction") {
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1_data));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2_data));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   const double dist = emdgrid::mcf_potlemon_l1(h1, h2, &plan);
 
   double recomputed_cost = 0.0;

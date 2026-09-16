@@ -30,3 +30,15 @@ Implementation helpers that are not part of the public API live in a
 When a function template accepts an input scalar type `Scalar`,
 computations should be performed in a separate `CompScalar` type
 (defaulting to `double`) to avoid precision loss from low-precision inputs.
+
+`CompScalar` must be threaded all the way through: intermediate buffers,
+accumulators, tolerances and the `SparseTransportPlan<CompScalar>` output all
+use it rather than a hardcoded `double`. Numerical thresholds that used to be
+literals belong in `utils.hpp` as `CompScalar`-dependent constants
+(`residual_mass_epsilon`, `default_mass_tolerance`) so a `float` computation
+is not blocked by a threshold below its own resolution.
+
+Solvers take the plan as `SparseTransportPlanPtr<CompScalar>`, an alias that
+puts the parameter in a non-deduced context. `CompScalar` is therefore chosen
+by the solver's explicit template arguments, and callers can still pass a
+plain `nullptr` when they do not want a plan.

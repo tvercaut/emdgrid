@@ -61,6 +61,7 @@
 #pragma pop_macro("CHECK")
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/utils.hpp"
 
 namespace emdgrid {
 
@@ -77,11 +78,11 @@ namespace emdgrid {
 template <std::size_t Dim, std::floating_point Scalar,
           std::floating_point CompScalar = double>  // NOLINT(*)
   requires(Dim >= 1)  // NOLINT(whitespace/indent_namespace)
-[[nodiscard]] CompScalar mcf_l1(const GridDataView<Dim, Scalar>& h1,
-                                const GridDataView<Dim, Scalar>& h2,
-                                SparseTransportPlan* plan = nullptr,
-                                double scale = 1e6,
-                                double mass_tol = 1e-6) {
+[[nodiscard]] CompScalar mcf_l1(
+    const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
+    SparseTransportPlanPtr<CompScalar> plan = nullptr,
+    CompScalar scale = static_cast<CompScalar>(1e6),
+    CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -90,19 +91,20 @@ template <std::size_t Dim, std::floating_point Scalar,
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
-  double t1 = 0.0;
-  double t2 = 0.0;
+  CompScalar t1{0};
+  CompScalar t2{0};
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double v1 = static_cast<double>(h1.data()[i]);
-    const double v2 = static_cast<double>(h2.data()[i]);
-    if (v1 < 0.0 || v2 < 0.0) {
+    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
+    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
+    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
       throw std::invalid_argument("histograms must be nonnegative");
     }
     t1 += v1;
     t2 += v2;
   }
 
-  if (std::abs(t1 - 1.0) > mass_tol || std::abs(t2 - 1.0) > mass_tol) {
+  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
+      std::abs(t2 - CompScalar{1}) > mass_tol) {
     throw std::invalid_argument("expected unit-mass histograms");
   }
 
@@ -110,12 +112,12 @@ template <std::size_t Dim, std::floating_point Scalar,
   std::size_t max_abs_idx = 0;
   int64_t max_abs_val = -1;
 
-  double cum_target = 0.0;
+  CompScalar cum_target{0};
   int64_t cum_scaled_prev = 0;
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const double diff = static_cast<double>(h1.data()[i]) -
-                        static_cast<double>(h2.data()[i]);
+    const CompScalar diff = static_cast<CompScalar>(h1.data()[i]) -
+                            static_cast<CompScalar>(h2.data()[i]);
     cum_target += diff;
     const int64_t cum_scaled = std::llround(cum_target * scale);
     const int64_t s = cum_scaled - cum_scaled_prev;
@@ -184,8 +186,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
 
   const CompScalar total_cost =
-      static_cast<CompScalar>(mcf.OptimalCost()) /
-      static_cast<CompScalar>(scale);
+      static_cast<CompScalar>(mcf.OptimalCost()) / scale;
 
   if (plan) {
     plan->source.clear();
@@ -193,10 +194,10 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->flow.clear();
 
     for (std::size_t i = 0; i < n_nodes; ++i) {
-      const double self_mass =
-          std::min(static_cast<double>(h1.data()[i]),
-                   static_cast<double>(h2.data()[i]));
-      if (self_mass > 0.0) {
+      const CompScalar self_mass =
+          std::min(static_cast<CompScalar>(h1.data()[i]),
+                   static_cast<CompScalar>(h2.data()[i]));
+      if (self_mass > CompScalar{0}) {
         plan->source.push_back(static_cast<uint32_t>(i));
         plan->target.push_back(static_cast<uint32_t>(i));
         plan->flow.push_back(self_mass);
@@ -270,7 +271,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 
         plan->source.push_back(static_cast<uint32_t>(src));
         plan->target.push_back(static_cast<uint32_t>(target));
-        plan->flow.push_back(static_cast<double>(bottleneck) / scale);
+        plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
       }
     }
   }

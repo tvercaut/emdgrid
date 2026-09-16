@@ -192,7 +192,7 @@ TEST_CASE("opencv_emd 2D: transport plan cost reconstruction") {
   const emdgrid::GridDataView<2, double> h1(layout, std::span(h1_norm));
   const emdgrid::GridDataView<2, double> h2(layout, std::span(h2_norm));
 
-  emdgrid::SparseTransportPlan plan;
+  emdgrid::SparseTransportPlan<> plan;
   const double cost = emdgrid::opencv_emd(h1, h2, emdgrid::GroundMetric::L1,
                                           &plan);
   CHECK(cost == doctest::Approx(1.0).epsilon(1e-5));

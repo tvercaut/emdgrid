@@ -6,6 +6,7 @@ Fast and exact optimal transport solvers for discrete histograms on regular grid
 - **Multidimensional EMD-L1**: Efficient exact tree-based network simplex solver (`emd_l1`) for 2D and 3D grid histograms based on Ling & Okada (2007).
 - **Multidimensional dpartion MCF Solver**: Exact $N$-D optimal transport solver (`mcf_dpartion` / `dpartion`) using $(d+1)$-partite DAG layered graphs (Auricchio et al. 2018) supporting $L_1$ and squared Euclidean ground metrics via LEMON NetworkSimplex or CostScaling.
 - **Multidimensional Knothe-Rosenblatt Heuristic**: Fast $N$-D heuristic solver (`knothe_rosenblatt`) supporting both $L_1$ and squared Euclidean ground metrics, custom dimension traversal permutations, and parallelization via OpenMP.
+- **Selectable Computation Precision**: Every solver is templated on a `CompScalar` computation type (defaulting to `double`) that governs the internal arithmetic, the returned cost and the flows of the returned `SparseTransportPlan<CompScalar>`. Pass `--comp-scalar float` to `emdgrid_example` to compare a single-precision run against the double-precision reference.
 - **Python Bindings**: Pybind11 Python bindings (`pyemdgrid`) with support for retrieving sparse transport plans (`scipy.sparse.coo_matrix`).
 
 ## Installation
