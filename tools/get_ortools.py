@@ -144,7 +144,8 @@ def fetch_release_metadata():
             return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         print(
-            f"Warning: Failed to fetch release metadata via API ({e}). Using fallback asset list."
+            f"Warning: Failed to fetch release metadata via API ({e}). "
+            "Using fallback asset list."
         )
         assets = [
             {
@@ -196,7 +197,8 @@ def main():
     )
 
     print(
-        f"Platform: system={platform.system()}, machine={platform.machine()}, distro={distro_id}, version={version_id}"
+        f"Platform: system={platform.system()}, machine={platform.machine()}, "
+        f"distro={distro_id}, version={version_id}"
     )
 
     best_asset = max(

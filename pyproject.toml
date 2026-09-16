@@ -31,3 +31,19 @@ cmake.args = [
     "-DCLANG_TIDY_EXE=OFF",
 ]
 wheel.packages = []
+
+[tool.ruff]
+line-length = 88
+# black in CI is installed without the `jupyter` extra and so skips notebooks;
+# keep ruff's scope identical rather than half-checking the Colab demo.
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+# pyflakes and pycodestyle for correctness, isort for import order, pyupgrade
+# and flake8-bugbear for the idiom and footgun checks that pay for themselves.
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# The extension module this repo builds, so it belongs in its own group rather
+# than folded in with the third-party imports.
+known-first-party = ["pyemdgrid"]

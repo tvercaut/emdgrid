@@ -7,10 +7,10 @@ POT's ot.emd2_lazy (exact network-simplex solver using cityblock distance) for
 """
 
 import numpy as np
+import ot
 import pytest
 import scipy.spatial
 import scipy.special
-import ot
 
 import pyemdgrid
 
@@ -355,7 +355,7 @@ class TestDpartionBinding:
 
 
 class TestGreedyEmdL1ApproxBinding:
-    """Basic correctness tests exercised via the Python binding for greedy_emd_l1_approx."""
+    """Correctness tests exercised via the binding for greedy_emd_l1_approx."""
 
     def test_1d_identical_histograms_zero(self):
         h = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
