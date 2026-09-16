@@ -171,24 +171,18 @@ template <std::size_t Dim, std::floating_point Scalar,
   Graph::ArcMap<int64_t> cost(graph);
   Graph::NodeMap<int64_t> supply_map(graph);
 
-  std::array<std::ptrdiff_t, Dim> stride{};
-  stride[Dim - 1] = 1;
-  for (std::size_t a = Dim - 1; a-- > 0;) {
-    stride[a] = stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
-  }
+  const auto stride = detail::compute_grid_strides<Dim>(shape);
 
   for (std::size_t a = 0; a < Dim; ++a) {
     const std::size_t extent = shape[a];
     if (extent < 2) {
       continue;
     }
-    const std::ptrdiff_t st = stride[a];
-    const auto extent_ptrdiff = static_cast<std::ptrdiff_t>(extent);
+    const std::size_t st = stride[a];
 
     for (std::size_t u = 0; u < n_nodes; ++u) {
-      const std::ptrdiff_t u_idx = static_cast<std::ptrdiff_t>(u);
-      if ((u_idx / st) % extent_ptrdiff < extent_ptrdiff - 1) {
-        const std::size_t v = u + static_cast<std::size_t>(st);
+      if ((u / st) % extent < extent - 1) {
+        const std::size_t v = u + st;
 
         const Arc a1 = graph.addArc(nodes[u], nodes[v]);
         capacity[a1] = cap_val;
@@ -419,29 +413,23 @@ template <std::size_t Dim, std::floating_point Scalar,
   Graph::ArcMap<int64_t> cost(graph);
   Graph::NodeMap<int64_t> supply_map(graph);
 
-  std::array<std::ptrdiff_t, Dim> stride{};
-  stride[Dim - 1] = 1;
-  for (std::size_t a = Dim - 1; a-- > 0;) {
-    stride[a] = stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
-  }
+  const auto stride = detail::compute_grid_strides<Dim>(shape);
 
   for (std::size_t k = 0; k < Dim; ++k) {
     const std::size_t extent_k = shape[k];
-    const std::ptrdiff_t st_k = stride[k];
+    const std::size_t st_k = stride[k];
     const std::size_t layer_src_offset = k * n_nodes;
     const std::size_t layer_dst_offset = (k + 1) * n_nodes;
 
     for (std::size_t base_u = 0; base_u < n_nodes; ++base_u) {
-      if ((static_cast<std::ptrdiff_t>(base_u) / st_k) %
-              static_cast<std::ptrdiff_t>(extent_k) !=
-          0) {
+      if ((base_u / st_k) % extent_k != 0) {
         continue;
       }
       for (std::size_t a_k = 0; a_k < extent_k; ++a_k) {
-        const std::size_t u = base_u + (a_k * static_cast<std::size_t>(st_k));
+        const std::size_t u = base_u + (a_k * st_k);
         const Node src = nodes[layer_src_offset + u];
         for (std::size_t b_k = 0; b_k < extent_k; ++b_k) {
-          const std::size_t v = base_u + (b_k * static_cast<std::size_t>(st_k));
+          const std::size_t v = base_u + (b_k * st_k);
           const Node dst = nodes[layer_dst_offset + v];
           const Arc arc = graph.addArc(src, dst);
           capacity[arc] = cap_val;

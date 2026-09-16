@@ -15,6 +15,18 @@ namespace emdgrid {
 
 namespace detail {
 
+/// Compute C-order linear strides for a grid shape.
+template <std::size_t Dim>
+[[nodiscard]] std::array<std::size_t, Dim> compute_grid_strides(
+    const typename GridLayout<Dim>::Shape& shape) {
+  std::array<std::size_t, Dim> strides{};
+  strides[Dim - 1] = 1;
+  for (std::size_t a = Dim - 1; a-- > 0;) {
+    strides[a] = strides[a + 1] * shape[a + 1];
+  }
+  return strides;
+}
+
 /// Validates a pair of grid histograms shared by every grid solver.
 ///
 /// Checks that both views share a layout, that no bin is negative, and that

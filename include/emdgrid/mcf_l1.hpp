@@ -128,23 +128,17 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   operations_research::SimpleMinCostFlow mcf;
 
-  std::array<std::ptrdiff_t, Dim> stride{};
-  stride[Dim - 1] = 1;
-  for (std::size_t a = Dim - 1; a-- > 0;) {
-    stride[a] = stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
-  }
+  const auto stride = detail::compute_grid_strides<Dim>(shape);
 
   for (std::size_t a = 0; a < Dim; ++a) {
     const std::size_t extent = shape[a];
     if (extent < 2) {
       continue;
     }
-    const std::ptrdiff_t st = stride[a];
-    const auto extent_ptrdiff = static_cast<std::ptrdiff_t>(extent);
+    const std::size_t st = stride[a];
 
     for (std::size_t u = 0; u < n_nodes; ++u) {
-      const std::ptrdiff_t u_idx = static_cast<std::ptrdiff_t>(u);
-      if ((u_idx / st) % extent_ptrdiff < extent_ptrdiff - 1) {
+      if ((u / st) % extent < extent - 1) {
         using NodeIdx = operations_research::SimpleMinCostFlow::NodeIndex;
         const auto u_node = static_cast<NodeIdx>(u);
         const auto v = static_cast<NodeIdx>(u + st);

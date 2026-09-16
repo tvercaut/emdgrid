@@ -11,6 +11,7 @@
 
 #include "emdgrid/emd_1d.hpp"
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/grid_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -26,18 +27,6 @@ struct KrTask {
   std::size_t tgt_base_offset{0};
   CompScalar mass{0};
 };
-
-/// Compute C-order linear strides for a grid shape.
-template <std::size_t Dim>
-[[nodiscard]] std::array<std::size_t, Dim> compute_grid_strides(
-    const typename GridLayout<Dim>::Shape& shape) {
-  std::array<std::size_t, Dim> strides{};
-  strides[Dim - 1] = 1;
-  for (std::size_t a = Dim - 1; a-- > 0;) {
-    strides[a] = strides[a + 1] * shape[a + 1];
-  }
-  return strides;
-}
 
 /// Precompute linear offset deltas for free dimensions R = {order[k+1] ...}.
 template <std::size_t Dim>
