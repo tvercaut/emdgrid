@@ -137,61 +137,8 @@ template <std::size_t Dim, std::floating_point Scalar,
       }
     }
 
-    std::vector<int64_t> rem_supply = supply;
-    std::vector<std::size_t> ptr(n_nodes, 0);
-
-    for (std::size_t src = 0; src < n_nodes; ++src) {
-      while (rem_supply[src] > 0) {
-        std::vector<std::pair<std::size_t, std::size_t>> path_edges;
-        std::size_t cur = src;
-
-        while (true) {
-          if (rem_supply[cur] < 0 && cur != src) {
-            break;
-          }
-          auto& list = flow_adj[cur];
-          std::size_t p = ptr[cur];
-          while (p < list.size() && list[p].flow <= 0) {
-            ++p;
-          }
-          ptr[cur] = p;
-          if (p >= list.size()) {
-            break;
-          }
-          path_edges.emplace_back(cur, p);
-          cur = static_cast<std::size_t>(list[p].head);
-        }
-
-        if (path_edges.empty()) {
-          break;
-        }
-
-        const std::size_t target = cur;
-        if (rem_supply[target] >= 0) {
-          break;
-        }
-
-        int64_t bottleneck = rem_supply[src];
-        bottleneck = std::min(bottleneck, -rem_supply[target]);
-        for (const auto& [u, p] : path_edges) {
-          bottleneck = std::min(bottleneck, flow_adj[u][p].flow);
-        }
-
-        if (bottleneck <= 0) {
-          break;
-        }
-
-        for (const auto& [u, p] : path_edges) {
-          flow_adj[u][p].flow -= bottleneck;
-        }
-        rem_supply[src] -= bottleneck;
-        rem_supply[target] += bottleneck;
-
-        plan->source.push_back(static_cast<uint32_t>(src));
-        plan->target.push_back(static_cast<uint32_t>(target));
-        plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
-      }
-    }
+    detail::decompose_flows(&flow_adj, supply, n_nodes, scale,
+                            std::identity{}, plan);
   }
 
   return total_cost;

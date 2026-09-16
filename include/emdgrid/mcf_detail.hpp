@@ -5,7 +5,9 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "emdgrid/emdgrid.hpp"
@@ -115,6 +117,82 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
   return std::max<int64_t>(total, 1);
+}
+
+/// Decomposes arc flows into direct (source bin, target bin, mass) entries.
+///
+/// A min-cost flow backend reports how much mass crosses each arc, but a
+/// transport plan has to say which bin each unit came from and where it ended
+/// up. This walks from a node with surplus along arcs that still carry flow
+/// until it reaches one with a deficit, appends that path's bottleneck to the
+/// plan, and subtracts it from every arc on the path, until no surplus is
+/// left. The per-node `ptr` cursor never rewinds, so an exhausted arc is
+/// skipped once and never revisited.
+///
+/// `flow_adj` is consumed in place and `rem_supply` is taken by value, both as
+/// scratch. `n_sources` bounds the nodes that can start a path. `target_bin`
+/// maps the node a path ended on to the bin reported in the plan: solvers on
+/// the grid graph pass std::identity, layered solvers subtract their sink
+/// layer's offset.
+template <std::floating_point CompScalar, class BinOf>
+void decompose_flows(std::vector<std::vector<FlowEdge>>* flow_adj,
+                     std::vector<int64_t> rem_supply, std::size_t n_sources,
+                     CompScalar scale, BinOf&& target_bin,
+                     SparseTransportPlan<CompScalar>* plan) {
+  std::vector<std::size_t> ptr(flow_adj->size(), 0);
+
+  for (std::size_t src = 0; src < n_sources; ++src) {
+    while (rem_supply[src] > 0) {
+      std::vector<std::pair<std::size_t, std::size_t>> path_edges;
+      std::size_t cur = src;
+
+      while (true) {
+        if (rem_supply[cur] < 0 && cur != src) {
+          break;
+        }
+        auto& list = (*flow_adj)[cur];
+        std::size_t p = ptr[cur];
+        while (p < list.size() && list[p].flow <= 0) {
+          ++p;
+        }
+        ptr[cur] = p;
+        if (p >= list.size()) {
+          break;
+        }
+        path_edges.emplace_back(cur, p);
+        cur = static_cast<std::size_t>(list[p].head);
+      }
+
+      if (path_edges.empty()) {
+        break;
+      }
+
+      const std::size_t target = cur;
+      if (rem_supply[target] >= 0) {
+        break;
+      }
+
+      int64_t bottleneck = rem_supply[src];
+      bottleneck = std::min(bottleneck, -rem_supply[target]);
+      for (const auto& [u, p] : path_edges) {
+        bottleneck = std::min(bottleneck, (*flow_adj)[u][p].flow);
+      }
+
+      if (bottleneck <= 0) {
+        break;
+      }
+
+      for (const auto& [u, p] : path_edges) {
+        (*flow_adj)[u][p].flow -= bottleneck;
+      }
+      rem_supply[src] -= bottleneck;
+      rem_supply[target] += bottleneck;
+
+      plan->source.push_back(static_cast<uint32_t>(src));
+      plan->target.push_back(static_cast<uint32_t>(target_bin(target)));
+      plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
+    }
+  }
 }
 
 }  // namespace detail
