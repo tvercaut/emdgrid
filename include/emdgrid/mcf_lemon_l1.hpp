@@ -70,6 +70,7 @@ int64_t run_lemon_mcf(
     typename Graph::template ArcMap<int64_t>& capacity,
     typename Graph::template ArcMap<int64_t>& cost,
     typename Graph::template NodeMap<int64_t>& supply,
+    // NOLINTNEXTLINE(readability-non-const-parameter)
     std::vector<std::vector<FlowEdge>>* flow_adj = nullptr) {
   Solver mcf(graph);
   mcf.upperMap(capacity).costMap(cost).supplyMap(supply);

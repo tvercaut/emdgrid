@@ -248,6 +248,7 @@ struct EmdSolver {
 
   // BFS to compute dual variables u[i], v[j].
   // Maintains: cost(i,j) = u[i] + v[j] for every basic (i,j).
+  // NOLINTNEXTLINE(readability-make-member-function-const)
   void find_basic_vars() {
     std::fill(u.begin(), u.end(), kInf);
     std::fill(v.begin(), v.end(), kInf);
@@ -259,6 +260,7 @@ struct EmdSolver {
       for (EmdNode2D* node = x_nodes.data(); node != end_x; ++node) {
         const int i = node->i;
         const int j = node->j;
+        // NOLINTNEXTLINE(bugprone-branch-clone)
         if (u[i] < kInf && v[j] >= kInf) {
           v[j] = cost(i, j) - u[i];
           changed = true;

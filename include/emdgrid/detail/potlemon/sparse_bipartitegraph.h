@@ -121,6 +121,12 @@ class SparseBipartiteDigraphBase {
   }
 
  public:
+  // Pre-build all lazily-initialised structures. Must be called in a serial
+  // context before any parallel iteration that uses firstIn/nextIn/nextOut.
+  void ensureAuxStructuresBuilt() const {
+    build_position_maps();
+  }
+
   virtual Node operator()(int ix) const { return Node(ix); }
   static int index(const Node& node) { return node; }
 
@@ -161,7 +167,8 @@ class SparseBipartiteDigraphBase {
       Arc orig_arc_id = std::get<2>(indexed_edges[i]);
 
       while (current_row < src) {
-        m_row_ptr[++current_row] = i;
+        ++current_row;
+        m_row_ptr[current_row] = i;
       }
 
       m_arc_sources[orig_arc_id] = src;
@@ -302,6 +309,177 @@ class SparseBipartiteDigraph : public SparseBipartiteDigraphBase {
 
   int nodeNum() const { return Parent::nodeNum(); }
   int64_t arcNum() const { return Parent::arcNum(); }
+};
+
+// General (non-bipartite) sparse directed graph for use with
+// NetworkSimplexSimple when the problem is not bipartite (e.g. grid graphs
+// for L1 EMD where every cell can be both a source and a sink).
+class SparseDigraph {
+ public:
+  typedef SparseDigraph Digraph;
+  typedef int Node;
+  typedef int64_t Arc;
+
+ private:
+  int m_node_num;
+  int64_t m_arc_num;
+
+  std::vector<Node> m_arc_sources;
+  std::vector<Node> m_arc_targets;
+
+  std::vector<int64_t> m_row_ptr;  // CSR row pointers (size: node_num+1)
+  std::vector<Arc> m_arc_ids;      // arc IDs in source order
+
+  mutable std::vector<std::vector<Arc>> m_in_arcs;
+  mutable bool m_in_arcs_built;
+  mutable std::vector<int64_t> m_arc_to_out_pos;
+  mutable std::vector<int64_t> m_arc_to_in_pos;
+  mutable bool m_position_maps_built;
+
+  void build_in_arcs() const {
+    if (m_in_arcs_built) {
+      return;
+    }
+    m_in_arcs.resize(static_cast<std::size_t>(m_node_num));
+    for (Arc a = 0; a < m_arc_num; ++a) {
+      m_in_arcs[static_cast<std::size_t>(m_arc_targets[a])].push_back(a);
+    }
+    m_in_arcs_built = true;
+  }
+
+  void build_position_maps() const {
+    if (m_position_maps_built) {
+      return;
+    }
+    m_arc_to_out_pos.resize(static_cast<std::size_t>(m_arc_num));
+    m_arc_to_in_pos.resize(static_cast<std::size_t>(m_arc_num));
+    for (int64_t pos = 0; pos < m_arc_num; ++pos) {
+      m_arc_to_out_pos[static_cast<std::size_t>(m_arc_ids[pos])] = pos;
+    }
+    build_in_arcs();
+    for (int nd = 0; nd < m_node_num; ++nd) {
+      const auto& in = m_in_arcs[static_cast<std::size_t>(nd)];
+      for (std::size_t pos = 0; pos < in.size(); ++pos) {
+        m_arc_to_in_pos[static_cast<std::size_t>(in[pos])] =
+            static_cast<int64_t>(pos);
+      }
+    }
+    m_position_maps_built = true;
+  }
+
+ public:
+  explicit SparseDigraph(int n)
+      : m_node_num(n),
+        m_arc_num(0),
+        m_in_arcs_built(false),
+        m_position_maps_built(false) {}
+
+  void buildFromEdges(
+      const std::vector<std::pair<Node, Node>>& edges) {
+    m_arc_num = static_cast<int64_t>(edges.size());
+    m_arc_sources.resize(static_cast<std::size_t>(m_arc_num));
+    m_arc_targets.resize(static_cast<std::size_t>(m_arc_num));
+    m_arc_ids.resize(static_cast<std::size_t>(m_arc_num));
+    m_in_arcs_built = false;
+    m_position_maps_built = false;
+
+    std::vector<std::tuple<Node, Node, Arc>> idx;
+    idx.reserve(static_cast<std::size_t>(m_arc_num));
+    for (Arc i = 0; i < m_arc_num; ++i) {
+      idx.emplace_back(edges[static_cast<std::size_t>(i)].first,
+                       edges[static_cast<std::size_t>(i)].second, i);
+    }
+    std::sort(idx.begin(), idx.end(), [](const auto& a, const auto& b) {
+      return std::get<0>(a) != std::get<0>(b)
+                 ? std::get<0>(a) < std::get<0>(b)
+                 : std::get<1>(a) < std::get<1>(b);
+    });
+
+    m_row_ptr.assign(static_cast<std::size_t>(m_node_num) + 1, 0);
+    int cur = 0;
+    for (int64_t i = 0; i < m_arc_num; ++i) {
+      Node src = std::get<0>(idx[static_cast<std::size_t>(i)]);
+      Node tgt = std::get<1>(idx[static_cast<std::size_t>(i)]);
+      Arc  aid = std::get<2>(idx[static_cast<std::size_t>(i)]);
+      while (cur < src) {
+        m_row_ptr[static_cast<std::size_t>(++cur)] = i;
+      }
+      m_arc_sources[static_cast<std::size_t>(aid)] = src;
+      m_arc_targets[static_cast<std::size_t>(aid)] = tgt;
+      m_arc_ids[static_cast<std::size_t>(i)] = aid;
+    }
+    while (cur < m_node_num) {
+      m_row_ptr[static_cast<std::size_t>(++cur)] = m_arc_num;
+    }
+  }
+
+  void ensureAuxStructuresBuilt() const { build_position_maps(); }
+
+  int nodeNum() const { return m_node_num; }
+  int64_t arcNum() const { return m_arc_num; }
+
+  Node source(Arc arc) const {
+    return m_arc_sources[static_cast<std::size_t>(arc)];
+  }
+  Node target(Arc arc) const {
+    return m_arc_targets[static_cast<std::size_t>(arc)];
+  }
+
+  static int id(Node node) { return node; }
+  static int64_t id(Arc arc) { return arc; }
+  static Node nodeFromId(int i) { return Node(i); }
+  static Arc arcFromId(int64_t i) { return Arc(i); }
+
+  void first(Node& node) const { node = m_node_num - 1; }
+  static void next(Node& node) { --node; }
+  void first(Arc& arc) const { arc = m_arc_num - 1; }
+  static void next(Arc& arc) { --arc; }
+
+  void firstOut(Arc& arc, const Node& node) const {
+    if (node < 0 || node >= m_node_num) {
+      arc = -1;
+      return;
+    }
+    int64_t start = m_row_ptr[static_cast<std::size_t>(node)];
+    int64_t end   = m_row_ptr[static_cast<std::size_t>(node) + 1];
+    arc = (start < end) ? m_arc_ids[static_cast<std::size_t>(start)] : Arc(-1);
+  }
+
+  void nextOut(Arc& arc) const {
+    if (arc < 0) {
+      return;
+    }
+    build_position_maps();
+    int64_t pos = m_arc_to_out_pos[static_cast<std::size_t>(arc)];
+    Node src = m_arc_sources[static_cast<std::size_t>(arc)];
+    int64_t end = m_row_ptr[static_cast<std::size_t>(src) + 1];
+    arc = (pos + 1 < end)
+              ? m_arc_ids[static_cast<std::size_t>(pos + 1)]
+              : Arc(-1);
+  }
+
+  void firstIn(Arc& arc, const Node& node) const {
+    build_in_arcs();
+    if (node < 0 || node >= m_node_num) {
+      arc = -1;
+      return;
+    }
+    const auto& in = m_in_arcs[static_cast<std::size_t>(node)];
+    arc = in.empty() ? Arc(-1) : in[0];
+  }
+
+  void nextIn(Arc& arc) const {
+    if (arc < 0) {
+      return;
+    }
+    build_position_maps();
+    int64_t pos = m_arc_to_in_pos[static_cast<std::size_t>(arc)];
+    Node tgt = m_arc_targets[static_cast<std::size_t>(arc)];
+    const auto& in = m_in_arcs[static_cast<std::size_t>(tgt)];
+    arc = (pos + 1 < static_cast<int64_t>(in.size()))
+              ? in[static_cast<std::size_t>(pos + 1)]
+              : Arc(-1);
+  }
 };
 
 }  // namespace potlemon
