@@ -61,6 +61,7 @@
 #pragma pop_macro("CHECK")
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/grid_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -83,30 +84,11 @@ template <std::size_t Dim, std::floating_point Scalar,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
-  if (h1.layout().shape() != h2.layout().shape()) {
-    throw std::invalid_argument("histogram shapes do not match");
-  }
+  detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
-
-  CompScalar t1{0};
-  CompScalar t2{0};
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
-      throw std::invalid_argument("histograms must be nonnegative");
-    }
-    t1 += v1;
-    t2 += v2;
-  }
-
-  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
-      std::abs(t2 - CompScalar{1}) > mass_tol) {
-    throw std::invalid_argument("expected unit-mass histograms");
-  }
 
   std::vector<int64_t> supply(n_nodes);
   std::size_t max_abs_idx = 0;
