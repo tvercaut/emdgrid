@@ -1,11 +1,25 @@
 /* -*- mode: C++; indent-tabs-mode: nil; -*-
  *
  *
- * This file has been adapted by Nicolas Bonneel (2013),
- * from network_simplex.h from LEMON, a generic C++ optimization library,
- * to implement a lightweight network simplex for mass transport, more
- * memory efficient that the original file. A previous version of this file
- * is used as part of the Displacement Interpolation project,
+ * Provenance chain:
+ *  1. Original: network_simplex.h from LEMON (Egervary Research Group, 2003–2010)
+ *     https://lemon.cs.elte.hu/
+ *  2. Adapted by Nicolas Bonneel (2013) for lightweight mass-transport use:
+ *     https://github.com/nbonneel/network_simplex
+ *     - March 2015: added OpenMP parallelization
+ *     - March 2017: included Antoine Rolet's trick to make it more robust
+ *     - April 2018: bug fix + 64-bit integers + updated to newer LEMON algorithm
+ *       version (u_in==u_out degenerate pivot case, sparse flow by default)
+ *  3. Included in the Python Optimal Transport (POT) library:
+ *     https://github.com/PythonOT/POT/blob/master/ot/lp/network_simplex_simple.h
+ *  4. Adapted for emdgrid (2025): namespace renamed to potlemon, code modernised
+ *     to C++20, extra storage modes (lazy/dense cost, packed arc states, arc
+ *     endpoints, warm-start), warnings suppressed for embedding as a header.
+ *     OpenMP support added conditionally (define EMDGRID_USE_OPENMP or compile
+ *     with -fopenmp, which auto-defines _OPENMP).
+ *
+ * A previous version of this file was used as part of the Displacement
+ * Interpolation project:
  * Web: http://www.cs.ubc.ca/labs/imager/tr/2011/DisplacementInterpolation/
  *
  *
@@ -39,6 +53,11 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#if defined(EMDGRID_USE_OPENMP) || defined(_OPENMP)
+#include <omp.h>
+#define POTLEMON_OPENMP 1
+#endif
 
 #include "emdgrid/detail/potlemon/sparse_bipartitegraph.h"
 
@@ -639,6 +658,75 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     Cost getCost(ArcsType e) const { return _ns.getCostForArc(e); }
 
     bool findEnteringArc() {
+#ifdef POTLEMON_OPENMP
+      // Parallel block-search pivot: scan arcs in blocks of _block_size,
+      // parallelising within each block. Mirrors nbonneel's OpenMP version
+      // (github.com/nbonneel/network_simplex) adapted to our accessor API.
+      const int num_threads = omp_get_max_threads();
+      std::vector<Cost> min_t(static_cast<std::size_t>(num_threads), Cost(0));
+      std::vector<ArcsType> arc_t(static_cast<std::size_t>(num_threads),
+                                  in_arc);
+      const ArcsType bs = static_cast<ArcsType>(
+          std::ceil(_block_size / static_cast<double>(num_threads)));
+
+      Cost min_val = Cost(0);
+      ArcsType next_arc_out = _next_arc;
+
+      for (ArcsType i = 0; i < _search_arc_num; i += _block_size) {
+        const ArcsType block_len =
+            std::min(i + _block_size, _search_arc_num) - i;
+        ArcsType last_e = _next_arc;
+
+#pragma omp parallel
+        {
+          int t = omp_get_thread_num();
+#pragma omp for schedule(static, bs) lastprivate(last_e)
+          for (ArcsType j = 0; j < block_len; ++j) {
+            ArcsType e = _next_arc + i + j;
+            if (e >= _search_arc_num) e -= _search_arc_num;
+            last_e = e;
+            Cost c =
+                _ns.arcState(e) *
+                (getCost(e) + _pi[_ns.arcSource(e)] - _pi[_ns.arcTarget(e)]);
+            if (c < min_t[static_cast<std::size_t>(t)]) {
+              min_t[static_cast<std::size_t>(t)] = c;
+              arc_t[static_cast<std::size_t>(t)] = e;
+            }
+          }
+        }
+
+        for (int t = 0; t < num_threads; ++t) {
+          if (min_t[static_cast<std::size_t>(t)] < min_val) {
+            min_val = min_t[static_cast<std::size_t>(t)];
+            _in_arc = arc_t[static_cast<std::size_t>(t)];
+          }
+        }
+        if (min_val < Cost(0)) {
+          const double a =
+              std::abs(_pi[_ns.arcSource(_in_arc)]) >
+                      std::abs(_pi[_ns.arcTarget(_in_arc)])
+                  ? std::abs(_pi[_ns.arcSource(_in_arc)])
+                  : std::abs(_pi[_ns.arcTarget(_in_arc)]);
+          const double a2 =
+              a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
+          if (min_val < -POTLEMON_EPSILON * a2) {
+            next_arc_out = last_e;
+            _next_arc = next_arc_out;
+            return true;
+          }
+        }
+      }
+      // Full scan complete without early exit.
+      if (min_val >= Cost(0)) return false;
+      const double a =
+          std::abs(_pi[_ns.arcSource(_in_arc)]) >
+                  std::abs(_pi[_ns.arcTarget(_in_arc)])
+              ? std::abs(_pi[_ns.arcSource(_in_arc)])
+              : std::abs(_pi[_ns.arcTarget(_in_arc)]);
+      const double a2 =
+          a > std::abs(getCost(_in_arc)) ? a : std::abs(getCost(_in_arc));
+      return min_val < -POTLEMON_EPSILON * a2;
+#else
       Cost c = 0;
       Cost min = 0;
       ArcsType e = 0;
@@ -694,6 +782,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     search_end:
       _next_arc = e;
       return true;
+#endif
     }
   };
 
@@ -948,9 +1037,12 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
     if (usesArcEndpoints()) {
     } else if (_arc_mixing) {
+      // Use arc_num/node_num as mixing coefficient (same as nbonneel 2018).
+      // This gives roughly min(n,m)/2 for balanced bipartite graphs, while the
+      // sqrt formula used in some LEMON versions gives sqrt(n*m).
       const ArcsType k = std::max(
-          static_cast<ArcsType>(std::sqrt(static_cast<double>(_arc_num))),
-          static_cast<ArcsType>(10));
+          static_cast<ArcsType>(_arc_num / _node_num),
+          static_cast<ArcsType>(3));
       mixingCoeff = k;
       subsequence_length = (_arc_num / mixingCoeff) + 1;
       num_big_subseqiences = _arc_num % mixingCoeff;
@@ -1611,67 +1703,92 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     int old_last_succ = _last_succ[u_out];
     v_out = static_cast<ArcsType>(_parent[u_out]);
 
-    u = _last_succ[u_in];
-    right = static_cast<ArcsType>(_thread[static_cast<std::size_t>(u)]);
+    // Degenerate pivot: entering arc replaces an arc to u_out's own parent,
+    // so the subtree rooted at u_in (== u_out) stays intact and only its
+    // attachment point changes.  Handling this separately avoids the full
+    // stem-chain walk of the general case.  Ported from the April 2018 LEMON
+    // algorithm update in nbonneel/network_simplex.
+    if (u_in == u_out) {
+      _parent[u_in] = static_cast<int>(v_in);
+      _pred[u_in] = in_arc;
+      _forward[u_in] = (u_in == static_cast<ArcsType>(arcSource(in_arc)));
 
-    if (old_rev_thread == static_cast<int>(v_in)) {
-      last = static_cast<ArcsType>(_thread[_last_succ[u_out]]);
+      if (_thread[static_cast<std::size_t>(v_in)] != static_cast<int>(u_out)) {
+        int after = _thread[static_cast<std::size_t>(old_last_succ)];
+        _thread[static_cast<std::size_t>(old_rev_thread)] = after;
+        _rev_thread[static_cast<std::size_t>(after)] = old_rev_thread;
+        after = _thread[static_cast<std::size_t>(v_in)];
+        _thread[static_cast<std::size_t>(v_in)] = static_cast<int>(u_out);
+        _rev_thread[static_cast<std::size_t>(u_out)] = static_cast<int>(v_in);
+        _thread[static_cast<std::size_t>(old_last_succ)] = after;
+        _rev_thread[static_cast<std::size_t>(after)] = old_last_succ;
+      }
     } else {
-      last = static_cast<ArcsType>(_thread[v_in]);
+      u = _last_succ[u_in];
+      right = static_cast<ArcsType>(_thread[static_cast<std::size_t>(u)]);
+
+      if (old_rev_thread == static_cast<int>(v_in)) {
+        last = static_cast<ArcsType>(_thread[_last_succ[u_out]]);
+      } else {
+        last = static_cast<ArcsType>(_thread[v_in]);
+      }
+
+      _thread[v_in] = static_cast<int>(stem = u_in);
+      _dirty_revs.clear();
+      _dirty_revs.push_back(static_cast<int>(v_in));
+      par_stem = v_in;
+      while (stem != u_out) {
+        new_stem = static_cast<ArcsType>(_parent[stem]);
+        _thread[u] = static_cast<int>(new_stem);
+        _dirty_revs.push_back(u);
+
+        w = _rev_thread[stem];
+        _thread[w] = static_cast<int>(right);
+        _rev_thread[right] = w;
+
+        _parent[stem] = static_cast<int>(par_stem);
+        par_stem = stem;
+        stem = new_stem;
+
+        u = _last_succ[stem] == _last_succ[par_stem] ? _rev_thread[par_stem]
+                                                     : _last_succ[stem];
+        right = static_cast<ArcsType>(_thread[u]);
+      }
+      _parent[u_out] = static_cast<int>(par_stem);
+      _thread[u] = static_cast<int>(last);
+      _rev_thread[last] = u;
+      _last_succ[u_out] = u;
+
+      if (old_rev_thread != static_cast<int>(v_in)) {
+        _thread[old_rev_thread] = static_cast<int>(right);
+        _rev_thread[right] = old_rev_thread;
+      }
+
+      for (std::size_t i = 0; i != _dirty_revs.size(); ++i) {
+        int u_idx = _dirty_revs[i];
+        _rev_thread[_thread[u_idx]] = u_idx;
+      }
+
+      int tmp_sc = 0;
+      int tmp_ls = _last_succ[u_out];
+      u = static_cast<int>(u_out);
+      while (u != static_cast<int>(u_in)) {
+        w = _parent[u];
+        _pred[u] = _pred[w];
+        _forward[u] = !_forward[w];
+        tmp_sc += _succ_num[u] - _succ_num[w];
+        _succ_num[u] = tmp_sc;
+        _last_succ[w] = tmp_ls;
+        u = w;
+      }
+      _pred[u_in] = in_arc;
+      _forward[u_in] = (u_in == static_cast<ArcsType>(arcSource(in_arc)));
+      _succ_num[u_in] = old_succ_num;
     }
 
-    _thread[v_in] = static_cast<int>(stem = u_in);
-    _dirty_revs.clear();
-    _dirty_revs.push_back(static_cast<int>(v_in));
-    par_stem = v_in;
-    while (stem != u_out) {
-      new_stem = static_cast<ArcsType>(_parent[stem]);
-      _thread[u] = static_cast<int>(new_stem);
-      _dirty_revs.push_back(u);
-
-      w = _rev_thread[stem];
-      _thread[w] = static_cast<int>(right);
-      _rev_thread[right] = w;
-
-      _parent[stem] = static_cast<int>(par_stem);
-      par_stem = stem;
-      stem = new_stem;
-
-      u = _last_succ[stem] == _last_succ[par_stem] ? _rev_thread[par_stem]
-                                                   : _last_succ[stem];
-      right = static_cast<ArcsType>(_thread[u]);
-    }
-    _parent[u_out] = static_cast<int>(par_stem);
-    _thread[u] = static_cast<int>(last);
-    _rev_thread[last] = u;
-    _last_succ[u_out] = u;
-
-    if (old_rev_thread != static_cast<int>(v_in)) {
-      _thread[old_rev_thread] = static_cast<int>(right);
-      _rev_thread[right] = old_rev_thread;
-    }
-
-    for (std::size_t i = 0; i != _dirty_revs.size(); ++i) {
-      int u_idx = _dirty_revs[i];
-      _rev_thread[_thread[u_idx]] = u_idx;
-    }
-
-    int tmp_sc = 0;
-    int tmp_ls = _last_succ[u_out];
-    u = static_cast<int>(u_out);
-    while (u != static_cast<int>(u_in)) {
-      w = _parent[u];
-      _pred[u] = _pred[w];
-      _forward[u] = !_forward[w];
-      tmp_sc += _succ_num[u] - _succ_num[w];
-      _succ_num[u] = tmp_sc;
-      _last_succ[w] = tmp_ls;
-      u = w;
-    }
-    _pred[u_in] = in_arc;
-    _forward[u_in] = (u_in == static_cast<ArcsType>(arcSource(in_arc)));
-    _succ_num[u_in] = old_succ_num;
-
+    // Update _last_succ from v_in towards the root.
+    // up_limit_in/out tighten the walk to nodes that still need updating,
+    // following the newer LEMON algorithm (April 2018).
     int up_limit_in = -1;
     int up_limit_out = -1;
     if (_last_succ[join] == static_cast<int>(v_in)) {
@@ -1680,11 +1797,16 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       up_limit_in = static_cast<int>(join);
     }
 
+    const int last_succ_out = _last_succ[u_out];
     for (u = static_cast<int>(v_in);
          u != up_limit_in && _last_succ[u] == static_cast<int>(v_in);
          u = _parent[u]) {
-      _last_succ[u] = _last_succ[u_out];
+      _last_succ[u] = last_succ_out;
     }
+
+    // Update _last_succ from v_out towards the root.
+    // The else-if guard avoids a no-op walk when last_succ hasn't changed
+    // (optimisation from nbonneel/network_simplex).
     if (join != static_cast<ArcsType>(old_rev_thread) &&
         v_in != static_cast<ArcsType>(old_rev_thread)) {
       for (u = static_cast<int>(v_out);
@@ -1692,11 +1814,11 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
            u = _parent[u]) {
         _last_succ[u] = old_rev_thread;
       }
-    } else {
+    } else if (last_succ_out != old_last_succ) {
       for (u = static_cast<int>(v_out);
            u != up_limit_out && _last_succ[u] == old_last_succ;
            u = _parent[u]) {
-        _last_succ[u] = _last_succ[u_out];
+        _last_succ[u] = last_succ_out;
       }
     }
 
@@ -1778,44 +1900,59 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           }
         }
       } else {
-        for (size_t i = 0; i != demand_nodes.size(); ++i) {
-          Node v_curr = demand_nodes[i];
-          Cost c = 0;
+        // Pre-allocate so indexed writes are thread-safe; erase sentinels after.
+        arc_vector.assign(demand_nodes.size(), INVALID_ARC);
+#ifdef POTLEMON_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+        for (ArcsType i = 0; i < static_cast<ArcsType>(demand_nodes.size());
+             ++i) {
+          Node v_curr = demand_nodes[static_cast<std::size_t>(i)];
           Cost min_cost = std::numeric_limits<Cost>::max();
           Arc min_arc = INVALID_ARC;
           Arc a;
           _graph.firstIn(a, v_curr);
           for (; a != INVALID_ARC; _graph.nextIn(a)) {
-            c = getCostForArc(getArcID(a));
+            Cost c = getCostForArc(getArcID(a));
             if (c < min_cost) {
               min_cost = c;
               min_arc = a;
             }
           }
-          if (min_arc != INVALID_ARC) {
-            arc_vector.push_back(getArcID(min_arc));
-          }
+          arc_vector[static_cast<std::size_t>(i)] =
+              min_arc != INVALID_ARC ? getArcID(min_arc) : INVALID_ARC;
         }
+        arc_vector.erase(
+            std::remove(arc_vector.begin(), arc_vector.end(),
+                        static_cast<ArcsType>(INVALID_ARC)),
+            arc_vector.end());
       }
     } else {
-      for (size_t i = 0; i != supply_nodes.size(); ++i) {
-        Node u_curr = supply_nodes[i];
-        Cost c = 0;
+      arc_vector.assign(supply_nodes.size(), INVALID_ARC);
+#ifdef POTLEMON_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+      for (ArcsType i = 0; i < static_cast<ArcsType>(supply_nodes.size());
+           ++i) {
+        Node u_curr = supply_nodes[static_cast<std::size_t>(i)];
         Cost min_cost = std::numeric_limits<Cost>::max();
         Arc min_arc = INVALID_ARC;
         Arc a;
         _graph.firstOut(a, u_curr);
         for (; a != INVALID_ARC; _graph.nextOut(a)) {
-          c = getCostForArc(getArcID(a));
+          Cost c = getCostForArc(getArcID(a));
           if (c < min_cost) {
             min_cost = c;
             min_arc = a;
           }
         }
-        if (min_arc != INVALID_ARC) {
-          arc_vector.push_back(getArcID(min_arc));
-        }
+        arc_vector[static_cast<std::size_t>(i)] =
+            min_arc != INVALID_ARC ? getArcID(min_arc) : INVALID_ARC;
       }
+      arc_vector.erase(
+          std::remove(arc_vector.begin(), arc_vector.end(),
+                      static_cast<ArcsType>(INVALID_ARC)),
+          arc_vector.end());
     }
 
     for (size_t i = 0; i != arc_vector.size(); ++i) {

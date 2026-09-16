@@ -26,8 +26,16 @@ struct BinSupply {
 
 }  // namespace detail
 
-/// EMD-L1 for multi-dimensional grid histograms solved via POT Network
-/// Simplex.
+/// EMD-L1 for multi-dimensional grid histograms solved via the potlemon
+/// Network Simplex solver.
+///
+/// The underlying solver traces its lineage from:
+///   - LEMON's network_simplex.h (Egervary Research Group, 2003–2010)
+///   - Adapted by Nicolas Bonneel (2013–2018) for mass transport:
+///     https://github.com/nbonneel/network_simplex
+///   - Included in the POT library:
+///     https://github.com/PythonOT/POT/blob/master/ot/lp/network_simplex_simple.h
+///   - Further adapted for emdgrid (namespace potlemon, C++20, optional OpenMP)
 ///
 /// Converts the grid histogram distance into a bipartite min-cost flow
 /// problem with L1 ground distance costs between bins with non-zero mass
