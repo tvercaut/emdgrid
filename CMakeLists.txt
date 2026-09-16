@@ -152,53 +152,14 @@ if(EMDGRID_USE_OPENMP)
       target_include_directories(emdgrid SYSTEM PUBLIC
         "${HOMEBREW_LIBOMP_PREFIX}/include")
     endif()
-    # GCC puts omp.h in a private directory alongside GCC-specific intrinsic
-    # headers that clang cannot parse.  Provide a clang-compatible omp.h in
-    # an isolated wrapper directory and pass it to clang-tidy via -extra-arg.
+    # GCC puts omp.h in a GCC-private directory with attributes such as
+    # __malloc__(dealloc,n) that clang-tidy cannot parse.  Undefine
+    # POTLEMON_OPENMP for clang-tidy so it never includes omp.h; the
+    # non-OpenMP code paths are still fully linted.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CLANG_TIDY_EXE)
-      set(_omp_wrapper_dir "${CMAKE_BINARY_DIR}/clang-tidy-omp-include")
-      file(MAKE_DIRECTORY "${_omp_wrapper_dir}")
-      # Prefer libomp-dev (apt install libomp-dev) which ships a proper
-      # clang-compatible omp.h at /usr/lib/llvm-N/include/omp.h.
-      set(_libomp_omp_h "")
-      file(GLOB _llvm_include_dirs "/usr/lib/llvm-*/include")
-      foreach(_dir IN LISTS _llvm_include_dirs)
-        if(EXISTS "${_dir}/omp.h")
-          set(_libomp_omp_h "${_dir}/omp.h")
-          break()
-        endif()
-      endforeach()
-      if(_libomp_omp_h)
-        file(COPY "${_libomp_omp_h}" DESTINATION "${_omp_wrapper_dir}")
-        message(STATUS "Using libomp omp.h for clang-tidy: ${_libomp_omp_h}")
-      else()
-        # Fallback: generate a minimal portable stub so clang-tidy can at
-        # least resolve the omp_* declarations used in this codebase.
-        # (GCC's own omp.h uses __malloc__(dealloc,n) attributes that clang
-        # does not accept, so we cannot copy it directly.)
-        file(WRITE "${_omp_wrapper_dir}/omp.h"
-          "/* Minimal omp.h stub for clang-tidy. Install libomp-dev for the */\n"
-          "/* full clang-compatible header.                                  */\n"
-          "#pragma once\n"
-          "#ifdef __cplusplus\nextern \"C\" {\n#endif\n"
-          "extern int  omp_get_thread_num(void);\n"
-          "extern int  omp_get_num_threads(void);\n"
-          "extern int  omp_get_max_threads(void);\n"
-          "extern int  omp_in_parallel(void);\n"
-          "extern int  omp_get_num_procs(void);\n"
-          "extern void omp_set_num_threads(int);\n"
-          "extern double omp_get_wtime(void);\n"
-          "extern double omp_get_wtick(void);\n"
-          "#ifdef __cplusplus\n}\n#endif\n"
-        )
-        message(STATUS "Generated omp.h stub for clang-tidy (install libomp-dev for full header)")
-      endif()
-      # Patch CXX_CLANG_TIDY on emdgrid (already created above).
       set_property(TARGET emdgrid APPEND PROPERTY
-        CXX_CLANG_TIDY "-extra-arg=-isystem${_omp_wrapper_dir}")
-      # Propagate to targets created later (e.g. emdgrid_example).
-      list(APPEND CMAKE_CXX_CLANG_TIDY
-        "-extra-arg=-isystem${_omp_wrapper_dir}")
+        CXX_CLANG_TIDY "-extra-arg=-UPOTLEMON_OPENMP")
+      list(APPEND CMAKE_CXX_CLANG_TIDY "-extra-arg=-UPOTLEMON_OPENMP")
     endif()
     message(STATUS "OpenMP found and enabled (disable with -DEMDGRID_USE_OPENMP=OFF).")
   else()
