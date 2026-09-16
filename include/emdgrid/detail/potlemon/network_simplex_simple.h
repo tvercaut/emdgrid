@@ -769,7 +769,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           _block_size * static_cast<ArcsType>(num_threads);
       bool found = false;
 
-#pragma omp parallel shared(found, _in_arc, _next_arc)
+#pragma omp parallel shared(found)
       {
         const int t = omp_get_thread_num();
         ThreadData& td = tdata[static_cast<std::size_t>(t)];
