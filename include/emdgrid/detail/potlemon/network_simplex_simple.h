@@ -607,6 +607,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   void setArcFlow(ArcsType arc_id, Value flow) {
     if (storesSparseArcFlows()) {
       if (arc_id < _arc_num) {
+        // NOLINTNEXTLINE(bugprone-branch-clone)
         if (flow == 0) {
           _real_flow.erase(arc_id);
         } else {
@@ -1502,6 +1503,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
         ArcsType e = _pred[u];
         int v = _parent[u];
         Cost c = getCostForArc(e);
+        // NOLINTNEXTLINE(bugprone-branch-clone)
         if (_forward[u]) {
           _pi[u] = _pi[v] - c;
         } else {
@@ -1647,6 +1649,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   void findJoinNode() {
     int u = arcSource(in_arc);
     int v = arcTarget(in_arc);
+    // NOLINTNEXTLINE(bugprone-infinite-loop,bugprone-branch-clone)
     while (u != v) {
       if (_succ_num[u] < _succ_num[v]) {
         u = _parent[u];
@@ -1835,6 +1838,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     // Update _last_succ from v_out towards the root.
     // The else-if guard avoids a no-op walk when last_succ hasn't changed
     // (optimisation from nbonneel/network_simplex).
+    // NOLINTNEXTLINE(bugprone-branch-clone)
     if (join != static_cast<ArcsType>(old_rev_thread) &&
         v_in != static_cast<ArcsType>(old_rev_thread)) {
       for (u = static_cast<int>(v_out);
@@ -1865,6 +1869,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
                      ? _pi[v_in] - _pi[u_in] - getCostForArc(_pred[u_in])
                      : _pi[v_in] - _pi[u_in] + getCostForArc(_pred[u_in]);
     int end = _thread[_last_succ[u_in]];
+    // NOLINTNEXTLINE(bugprone-infinite-loop)
     for (int u = static_cast<int>(u_in); u != end; u = _thread[u]) {
       _pi[u] += sigma;
     }

@@ -167,7 +167,8 @@ class SparseBipartiteDigraphBase {
       Arc orig_arc_id = std::get<2>(indexed_edges[i]);
 
       while (current_row < src) {
-        m_row_ptr[++current_row] = i;
+        ++current_row;
+        m_row_ptr[current_row] = i;
       }
 
       m_arc_sources[orig_arc_id] = src;

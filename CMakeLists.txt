@@ -127,7 +127,8 @@ if(EMDGRID_USE_OPENMP)
         ERROR_QUIET
         RESULT_VARIABLE BREW_LIBOMP_RESULT
       )
-      if(BREW_LIBOMP_RESULT EQUAL 0 AND HOMEBREW_LIBOMP_PREFIX)
+      if(BREW_LIBOMP_RESULT EQUAL 0 AND HOMEBREW_LIBOMP_PREFIX
+          AND EXISTS "${HOMEBREW_LIBOMP_PREFIX}/include/omp.h")
         # Use -isystem so omp.h is treated as a system header (no warnings).
         set(OpenMP_CXX_FLAGS
             "-Xpreprocessor -fopenmp -isystem ${HOMEBREW_LIBOMP_PREFIX}/include")
@@ -150,6 +151,21 @@ if(EMDGRID_USE_OPENMP)
     if(APPLE AND HOMEBREW_LIBOMP_PREFIX)
       target_include_directories(emdgrid SYSTEM PUBLIC
         "${HOMEBREW_LIBOMP_PREFIX}/include")
+    endif()
+    # GCC puts omp.h in a private compiler include directory that clang-tidy
+    # (which uses a Clang frontend) does not search. Expose it explicitly so
+    # clang-tidy can parse headers that include <omp.h>.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=omp.h
+        OUTPUT_VARIABLE _gcc_omp_h
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+      )
+      if(_gcc_omp_h AND EXISTS "${_gcc_omp_h}")
+        get_filename_component(_gcc_omp_dir "${_gcc_omp_h}" DIRECTORY)
+        target_include_directories(emdgrid SYSTEM PUBLIC "${_gcc_omp_dir}")
+      endif()
     endif()
     message(STATUS "OpenMP found and enabled (disable with -DEMDGRID_USE_OPENMP=OFF).")
   else()
