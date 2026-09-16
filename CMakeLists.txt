@@ -143,6 +143,14 @@ if(EMDGRID_USE_OPENMP)
     # build system has set up the correct include paths (i.e. not just because
     # the compiler happens to define _OPENMP via an unrelated -fopenmp flag).
     target_compile_definitions(emdgrid PUBLIC POTLEMON_OPENMP=1)
+    # On Apple/Homebrew, expose the libomp include path explicitly so all
+    # consumers can find omp.h. The -isystem flag inside OpenMP_CXX_FLAGS is
+    # in INTERFACE_COMPILE_OPTIONS and may not propagate reliably; an explicit
+    # INTERFACE_INCLUDE_DIRECTORIES entry always propagates.
+    if(APPLE AND HOMEBREW_LIBOMP_PREFIX)
+      target_include_directories(emdgrid SYSTEM PUBLIC
+        "${HOMEBREW_LIBOMP_PREFIX}/include")
+    endif()
     message(STATUS "OpenMP found and enabled (disable with -DEMDGRID_USE_OPENMP=OFF).")
   else()
     message(STATUS "OpenMP requested but not found on this system.")
