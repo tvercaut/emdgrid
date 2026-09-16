@@ -711,107 +711,123 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
 
     template <bool kDirect>
     bool findEnteringArcImpl() {
-      Cost c = 0;
+      // Block-search: scan _block_size arcs, check early-exit at each boundary.
+      // The inner loop is free of goto and per-iteration counter updates so
+      // the compiler can vectorise it (unlike the original two-loop+goto form).
+      const ArcsType scan_start = _next_arc;
       Cost min = 0;
-      ArcsType e = 0;
-      ArcsType cnt = _block_size;
 
-      for (e = _next_arc; e != _search_arc_num; ++e) {
-        c = reducedCost<kDirect>(e);
-        if (c < min) {
-          min = c;
-          _in_arc = e;
-        }
-        if (--cnt == 0) {
-          if (min < -POTLEMON_EPSILON * epsilonBound()) {
-            goto search_end;
+      for (ArcsType base = 0; base < _search_arc_num; base += _block_size) {
+        const ArcsType block_end = std::min(base + _block_size, _search_arc_num);
+        for (ArcsType j = base; j < block_end; ++j) {
+          ArcsType e = scan_start + j;
+          if (e >= _search_arc_num) { e -= _search_arc_num; }
+          const Cost c = reducedCost<kDirect>(e);
+          if (c < min) {
+            min = c;
+            _in_arc = e;
           }
-          cnt = _block_size;
+        }
+        if (min < -POTLEMON_EPSILON * epsilonBound()) {
+          _next_arc = scan_start + block_end;
+          if (_next_arc >= _search_arc_num) { _next_arc -= _search_arc_num; }
+          return true;
         }
       }
-      for (e = 0; e != _next_arc; ++e) {
-        c = reducedCost<kDirect>(e);
-        if (c < min) {
-          min = c;
-          _in_arc = e;
-        }
-        if (--cnt == 0) {
-          if (min < -POTLEMON_EPSILON * epsilonBound()) {
-            goto search_end;
-          }
-          cnt = _block_size;
-        }
+      return min < -POTLEMON_EPSILON * epsilonBound();
+    }
+
+    // Per-thread data padded to a cache line to avoid false sharing.
+    struct alignas(64) ThreadData {
+      Cost min_val = Cost(0);
+      ArcsType arc_id = 0;
+    };
+
+    // Parallel block-search: one thread-team spawn per call.
+    // The original approach (one #pragma omp parallel per serial block) spawns
+    // _search_arc_num/_block_size teams per call; team-entry overhead dominates.
+    // Here we spawn once and use par_block = num_threads*_block_size so each
+    // thread processes _block_size arcs per block (same early-exit granularity
+    // per thread as the serial path) while needing num_threads-fold fewer
+    // synchronisation points. kDirect mirrors findEnteringArcImpl<kDirect> so
+    // the inner loop uses direct array access and can be vectorised.
+    template <bool kDirect>
+    bool findEnteringArcOmpImpl() {
+      const int num_threads = omp_get_max_threads();
+      std::vector<ThreadData> tdata(static_cast<std::size_t>(num_threads));
+      for (int tt = 0; tt < num_threads; ++tt) {
+        tdata[static_cast<std::size_t>(tt)].arc_id = _in_arc;
       }
-      if (min >= -POTLEMON_EPSILON * epsilonBound()) {
-        return false;
+      const ArcsType scan_start = _next_arc;
+      const ArcsType par_block =
+          _block_size * static_cast<ArcsType>(num_threads);
+      bool found = false;
+
+#pragma omp parallel shared(found, _in_arc, _next_arc)
+      {
+        const int t = omp_get_thread_num();
+        ThreadData& td = tdata[static_cast<std::size_t>(t)];
+        for (ArcsType base = 0; base < _search_arc_num && !found;
+             base += par_block) {
+          const ArcsType block_end = std::min(base + par_block, _search_arc_num);
+#pragma omp for schedule(static)
+          for (ArcsType j = base; j < block_end; ++j) {
+            ArcsType e = scan_start + j;
+            if (e >= _search_arc_num) { e -= _search_arc_num; }
+            const Cost c = reducedCost<kDirect>(e);
+            if (c < td.min_val) {
+              td.min_val = c;
+              td.arc_id = e;
+            }
+          }
+          // Implicit barrier from omp for, then one thread reduces + checks exit.
+          // Implicit barrier from omp single propagates 'found' to all threads.
+#pragma omp single
+          {
+            Cost block_min = Cost(0);
+            for (int tt = 0; tt < num_threads; ++tt) {
+              if (tdata[static_cast<std::size_t>(tt)].min_val < block_min) {
+                block_min = tdata[static_cast<std::size_t>(tt)].min_val;
+                _in_arc = tdata[static_cast<std::size_t>(tt)].arc_id;
+              }
+            }
+            if (block_min < -POTLEMON_EPSILON * epsilonBound()) {
+              found = true;
+              _next_arc = scan_start + block_end;
+              if (_next_arc >= _search_arc_num) { _next_arc -= _search_arc_num; }
+            }
+          }
+        }
       }
 
-    search_end:
-      _next_arc = e;
-      return true;
+      if (found) { return true; }
+      Cost min_val = Cost(0);
+      for (int t = 0; t < num_threads; ++t) {
+        if (tdata[static_cast<std::size_t>(t)].min_val < min_val) {
+          min_val = tdata[static_cast<std::size_t>(t)].min_val;
+          _in_arc = tdata[static_cast<std::size_t>(t)].arc_id;
+        }
+      }
+      return min_val < -POTLEMON_EPSILON * epsilonBound();
     }
 
     bool findEnteringArc() {
 #ifdef POTLEMON_OPENMP
-      // Parallel block-search pivot.
-      const int num_threads = omp_get_max_threads();
-      std::vector<Cost> min_t(static_cast<std::size_t>(num_threads), Cost(0));
-      std::vector<ArcsType> arc_t(static_cast<std::size_t>(num_threads),
-                                  _in_arc);
-      const ArcsType bs = static_cast<ArcsType>(
-          std::ceil(_block_size / static_cast<double>(num_threads)));
-
-      Cost min_val = Cost(0);
-      ArcsType next_arc_out = _next_arc;
-
-      for (ArcsType i = 0; i < _search_arc_num; i += _block_size) {
-        const ArcsType block_len =
-            std::min(i + _block_size, _search_arc_num) - i;
-        ArcsType last_e = _next_arc;
-
-#pragma omp parallel
-        {
-          int t = omp_get_thread_num();
-#pragma omp for schedule(static, bs) lastprivate(last_e)
-          for (ArcsType j = 0; j < block_len; ++j) {
-            ArcsType e = _next_arc + i + j;
-            if (e >= _search_arc_num) {
-              e -= _search_arc_num;
-            }
-            last_e = e;
-            const Cost c = reducedCost<false>(e);
-            if (c < min_t[static_cast<std::size_t>(t)]) {
-              min_t[static_cast<std::size_t>(t)] = c;
-              arc_t[static_cast<std::size_t>(t)] = e;
-            }
-          }
-        }
-
-        for (int t = 0; t < num_threads; ++t) {
-          if (min_t[static_cast<std::size_t>(t)] < min_val) {
-            min_val = min_t[static_cast<std::size_t>(t)];
-            _in_arc = arc_t[static_cast<std::size_t>(t)];
-          }
-        }
-        if (min_val < Cost(0)) {
-          if (min_val < -POTLEMON_EPSILON * epsilonBound()) {
-            next_arc_out = last_e;
-            _next_arc = next_arc_out;
-            return true;
-          }
-        }
+      // mach-semaphore barriers on macOS cost ~1.3 µs each; futex on Linux
+      // costs ~0.1 µs.  With early exit, each findEnteringArc call triggers
+      // O(1-5) barrier pairs, so on macOS OMP overhead dominates at all
+      // practical EMD sizes (16 M arcs for d=20 produces ~7 s system time
+      // vs 2.5 s serial).  The 100 M threshold reserves OMP for problems
+      // large enough that Linux futex savings outweigh synchronisation cost.
+      constexpr ArcsType kOmpArcThreshold = 100'000'000;
+      if (omp_get_max_threads() > 1 &&
+          _search_arc_num >= kOmpArcThreshold) {
+        if (_use_direct) { return findEnteringArcOmpImpl<true>(); }
+        return findEnteringArcOmpImpl<false>();
       }
-      // Full scan complete without early exit.
-      if (min_val >= Cost(0)) {
-        return false;
-      }
-      return min_val < -POTLEMON_EPSILON * epsilonBound();
-#else
-      if (_use_direct) {
-        return findEnteringArcImpl<true>();
-      }
-      return findEnteringArcImpl<false>();
 #endif
+      if (_use_direct) { return findEnteringArcImpl<true>(); }
+      return findEnteringArcImpl<false>();
     }
   };
 
