@@ -684,8 +684,8 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     }
 
     // Reduced cost of arc ae. kDirect=true uses direct array member access,
-    // removing per-element branch overhead in the common Dense/AllArcCosts mode.
-    // kDirect=false uses the accessor API for non-default storage configurations.
+    // removing per-element branch overhead in the common Dense/AllArcCosts
+    // mode. kDirect=false uses the accessor API for non-default configs.
     template <bool kDirect>
     Cost reducedCost(ArcsType ae) const {
       if constexpr (kDirect) {
@@ -1928,7 +1928,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           }
         }
       } else {
-        // Pre-allocate so indexed writes are thread-safe; erase sentinels after.
+        // Pre-allocate for indexed writes; erase sentinels after.
         arc_vector.assign(demand_nodes.size(), INVALID_ARC);
 #ifdef POTLEMON_OPENMP
         // firstIn/nextIn use lazy-initialised structures; pre-build them here
