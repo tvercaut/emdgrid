@@ -742,6 +742,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       return min < -POTLEMON_EPSILON * epsilonBound();
     }
 
+#ifdef POTLEMON_OPENMP
     // Per-thread data padded to a cache line to avoid false sharing.
     struct alignas(64) ThreadData {
       Cost min_val = Cost(0);
@@ -822,6 +823,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
       }
       return min_val < -POTLEMON_EPSILON * epsilonBound();
     }
+#endif  // POTLEMON_OPENMP
 
     bool findEnteringArc() {
 #ifdef POTLEMON_OPENMP
