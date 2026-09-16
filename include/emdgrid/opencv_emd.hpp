@@ -465,6 +465,19 @@ struct EmdSolver {
 /// mcf_potlemon), which exploit the regular structure and run in
 /// sub-quadratic time.
 ///
+/// **Why this solver cannot be adapted for grid-graph EMD-L1**: the
+/// transportation simplex is a bipartite-only algorithm — its internals
+/// (the ssize×dsize cost matrix, the per-row/column linked lists) are
+/// hard-wired to a source-set versus sink-set structure. The efficient
+/// grid-graph formulation for L1 is a general min-cost flow problem where
+/// every bin can be a source or a sink and flow routes through intermediate
+/// nodes along axis-aligned edges (O(n·d) arcs total). Feeding that graph
+/// into a transportation simplex would require pre-computing the L1 cost
+/// between every source–sink pair, collapsing back to an O(n²) dense
+/// matrix and erasing all benefit of the sparse structure. General network
+/// simplex solvers (LEMON, OR-Tools, POT) handle arbitrary graphs and are
+/// therefore the right tool for grid-based EMD-L1.
+///
 /// @tparam Dim        Grid dimensionality (>= 1).
 /// @tparam Scalar     Input histogram scalar type.
 /// @tparam CostFn     Callable: (Coordinates, Coordinates) -> float.
