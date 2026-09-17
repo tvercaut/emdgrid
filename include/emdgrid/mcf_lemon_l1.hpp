@@ -40,8 +40,13 @@ enum class McfLemonAlgorithm : std::uint8_t { NetworkSimplex, CostScaling };
 
 namespace detail {
 
+/// A cost functor usable by the LEMON-backed solvers.
+///
+/// Rules out the two overload-selector enums so that the cost-functor
+/// overload of a solver never competes with its `GroundMetric` overload nor
+/// with the one that only picks a `McfLemonAlgorithm`.
 template <typename T>
-concept ValidDpartCost =
+concept ValidLemonCostFn =
     ValidCostFn<T> &&                                        // NOLINT(*)
     !std::is_same_v<std::decay_t<T>, McfLemonAlgorithm>;     // NOLINT(*)
 
@@ -238,7 +243,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 /// @tparam CostFn     Separable axis cost functor.
 template <std::size_t Dim, std::floating_point Scalar,
           std::floating_point CompScalar = double, typename CostFn>  // NOLINT(*)
-  requires(Dim >= 1 && detail::ValidDpartCost<CostFn>)                // NOLINT(*)
+  requires(Dim >= 1 && detail::ValidLemonCostFn<CostFn>)                // NOLINT(*)
 [[nodiscard]] CompScalar mcf_dpartion(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     CostFn&& cost_fn,
