@@ -16,7 +16,7 @@ endif()
 set_target_properties(doctest PROPERTIES SYSTEM TRUE CXX_CLANG_TIDY "")
 
 add_executable(emdgrid_tests test_emdgrid.cpp test_mcf_potlemon_l1.cpp test_opencv_emd.cpp
-                             test_comp_scalar.cpp)
+                             test_emd_lemon.cpp test_comp_scalar.cpp)
 target_link_libraries(emdgrid_tests PRIVATE doctest::doctest emdgrid)
 target_compile_definitions(emdgrid_tests PRIVATE EMDGRID_VERSION="${emdgrid_VERSION}")
 
