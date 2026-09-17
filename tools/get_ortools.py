@@ -149,7 +149,16 @@ def fetch_with_urllib(url: str, headers: dict, destination: Path | None):
 
 
 def fetch_with_curl(curl: str, url: str, headers: dict, destination: Path | None):
-    cmd = [curl, "--fail", "--location", "--silent", "--show-error", "--retry", "3"]
+    cmd = [curl, "--fail", "--location", "--show-error", "--retry", "3"]
+
+    # The progress bar redraws with carriage returns on stderr: helpful for the
+    # multi-hundred-MB archive on a terminal, line noise in a CI log. The
+    # metadata request is small enough that a bar would only ever flicker.
+    if destination is not None and sys.stderr.isatty():
+        cmd.append("--progress-bar")
+    else:
+        cmd.append("--silent")
+
     for key, value in headers.items():
         cmd += ["--header", f"{key}: {value}"]
 
