@@ -62,6 +62,17 @@ def parse_args():
         help="Directory where the archive will be extracted.",
     )
 
+    parser.add_argument(
+        "--show-progress",
+        choices=("on", "off"),
+        default="on",
+        help=(
+            "Show a progress bar while downloading the archive (default: on). "
+            "The bar redraws with carriage returns, so pass 'off' for logs that "
+            "do not render them, such as CI."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -148,16 +159,15 @@ def fetch_with_urllib(url: str, headers: dict, destination: Path | None):
         return None
 
 
-def fetch_with_curl(curl: str, url: str, headers: dict, destination: Path | None):
+def fetch_with_curl(
+    curl: str,
+    url: str,
+    headers: dict,
+    destination: Path | None,
+    show_progress: bool,
+):
     cmd = [curl, "--fail", "--location", "--show-error", "--retry", "3"]
-
-    # The progress bar redraws with carriage returns on stderr: helpful for the
-    # multi-hundred-MB archive on a terminal, line noise in a CI log. The
-    # metadata request is small enough that a bar would only ever flicker.
-    if destination is not None and sys.stderr.isatty():
-        cmd.append("--progress-bar")
-    else:
-        cmd.append("--silent")
+    cmd.append("--progress-bar" if show_progress else "--silent")
 
     for key, value in headers.items():
         cmd += ["--header", f"{key}: {value}"]
@@ -175,7 +185,12 @@ def fetch_with_curl(curl: str, url: str, headers: dict, destination: Path | None
     return None if destination is not None else result.stdout
 
 
-def fetch_url(url: str, headers: dict, destination: Path | None = None):
+def fetch_url(
+    url: str,
+    headers: dict,
+    destination: Path | None = None,
+    show_progress: bool = False,
+):
     """Fetch `url`, returning its bytes or writing them to `destination`.
 
     urllib is preferred, but some interpreters cannot open https URLs at all: a
@@ -192,7 +207,7 @@ def fetch_url(url: str, headers: dict, destination: Path | None = None):
             raise
 
         print(f"Warning: urllib failed to fetch {url} ({e}). Retrying with curl.")
-        return fetch_with_curl(curl, url, headers, destination)
+        return fetch_with_curl(curl, url, headers, destination, show_progress)
 
 
 def fetch_release_metadata():
@@ -218,8 +233,8 @@ def fetch_release_metadata():
         return {"assets": assets}
 
 
-def download_file(url: str, destination: Path):
-    fetch_url(url, {"User-Agent": USER_AGENT}, destination)
+def download_file(url: str, destination: Path, show_progress: bool):
+    fetch_url(url, {"User-Agent": USER_AGENT}, destination, show_progress)
 
 
 def extract_archive(archive: Path, output_dir: Path):
@@ -282,7 +297,7 @@ def main():
         archive = Path(tmpdir) / filename
 
         print("Downloading archive...")
-        download_file(url, archive)
+        download_file(url, archive, args.show_progress == "on")
 
         print("Extracting archive...")
         extract_archive(archive, args.output_path)
