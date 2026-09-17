@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 
+# `Path | None` annotations need this on the Python 3.8 floor in pyproject.toml.
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import platform
+import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -14,6 +19,7 @@ from pathlib import Path
 
 RELEASE_TAG = "v9.15"
 API_URL = f"https://api.github.com/repos/google/or-tools/releases/tags/{RELEASE_TAG}"
+USER_AGENT = "emdgrid-get-ortools"
 
 FALLBACK_CPP_ASSETS = [
     "or-tools_aarch64_AlmaLinux-8.10_cpp_v9.15.6755.tar.gz",
@@ -54,6 +60,17 @@ def parse_args():
         type=Path,
         default=Path("third_party"),
         help="Directory where the archive will be extracted.",
+    )
+
+    parser.add_argument(
+        "--show-progress",
+        choices=("on", "off"),
+        default="on",
+        help=(
+            "Show a progress bar while downloading the archive (default: on). "
+            "The bar redraws with carriage returns, so pass 'off' for logs that "
+            "do not render them, such as CI."
+        ),
     )
 
     return parser.parse_args()
@@ -132,16 +149,75 @@ def score_asset(name, os_patterns, arch_patterns, ext_patterns, distro_id, versi
     return score
 
 
+def fetch_with_urllib(url: str, headers: dict, destination: Path | None):
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        if destination is None:
+            return resp.read()
+        with open(destination, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        return None
+
+
+def fetch_with_curl(
+    curl: str,
+    url: str,
+    headers: dict,
+    destination: Path | None,
+    show_progress: bool,
+):
+    cmd = [curl, "--fail", "--location", "--show-error", "--retry", "3"]
+    cmd.append("--progress-bar" if show_progress else "--silent")
+
+    for key, value in headers.items():
+        cmd += ["--header", f"{key}: {value}"]
+
+    if destination is not None:
+        cmd += ["--output", str(destination)]
+
+    cmd.append(url)
+
+    try:
+        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"curl failed for {url} (exit status {e.returncode})") from e
+
+    return None if destination is not None else result.stdout
+
+
+def fetch_url(
+    url: str,
+    headers: dict,
+    destination: Path | None = None,
+    show_progress: bool = False,
+):
+    """Fetch `url`, returning its bytes or writing them to `destination`.
+
+    urllib is preferred, but some interpreters cannot open https URLs at all: a
+    Python built without a working `ssl` module (a common pyenv install on
+    macOS) fails every https request with `unknown url type: https`. curl is
+    used as a fallback there, and only there, so the urllib error is what
+    surfaces when curl is not installed either.
+    """
+    try:
+        return fetch_with_urllib(url, headers, destination)
+    except Exception as e:
+        curl = shutil.which("curl")
+        if curl is None:
+            raise
+
+        print(f"Warning: urllib failed to fetch {url} ({e}). Retrying with curl.")
+        return fetch_with_curl(curl, url, headers, destination, show_progress)
+
+
 def fetch_release_metadata():
-    headers = {"User-Agent": "python-urllib"}
+    headers = {"User-Agent": USER_AGENT}
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    req = urllib.request.Request(API_URL, headers=headers)
     try:
-        with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        return json.loads(fetch_url(API_URL, headers).decode("utf-8"))
     except Exception as e:
         print(
             f"Warning: Failed to fetch release metadata via API ({e}). "
@@ -157,14 +233,8 @@ def fetch_release_metadata():
         return {"assets": assets}
 
 
-def download_file(url: str, destination: Path):
-    req = urllib.request.Request(url, headers={"User-Agent": "python-urllib"})
-    with urllib.request.urlopen(req) as resp, open(destination, "wb") as f:
-        while True:
-            chunk = resp.read(8192)
-            if not chunk:
-                break
-            f.write(chunk)
+def download_file(url: str, destination: Path, show_progress: bool):
+    fetch_url(url, {"User-Agent": USER_AGENT}, destination, show_progress)
 
 
 def extract_archive(archive: Path, output_dir: Path):
@@ -227,7 +297,7 @@ def main():
         archive = Path(tmpdir) / filename
 
         print("Downloading archive...")
-        download_file(url, archive)
+        download_file(url, archive, args.show_progress == "on")
 
         print("Extracting archive...")
         extract_archive(archive, args.output_path)
