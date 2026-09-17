@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/log_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -84,6 +85,8 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
 [[nodiscard]] CompScalar emd_1d(
     const GridDataView<1, Scalar>& h1, const GridDataView<1, Scalar>& h2,
     SparseTransportPlanPtr<CompScalar> plan = nullptr) {
+  detail::SolverLog log("emd_1d");
+
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -123,8 +126,12 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
       plan->target.push_back(static_cast<uint32_t>(flow_pair.tgt_idx));
       plan->flow.push_back(flow_pair.flow);
     }
+    log.phase("plan extraction", fmt::format("entries={}", plan->flow.size()));
   }
 
+  // Closed form over the prefix sums: exact, with nothing to converge.
+  log.status("EXACT", detail::SolverLog::Outcome::Optimal);
+  log.finish(total);
   return total;
 }
 
@@ -141,6 +148,8 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
     const GridDataView<1, Scalar>& h1,
     const GridDataView<1, Scalar>& h2,
     SparseTransportPlanPtr<CompScalar> plan = nullptr) {
+  detail::SolverLog log("emd_sqeuclidean_1d");
+
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -174,7 +183,13 @@ template <std::floating_point Scalar, std::floating_point CompScalar = double>
       plan->flow.push_back(flow_pair.flow);
     }
   }
+  if (plan) {
+    log.phase("plan extraction", fmt::format("entries={}", plan->flow.size()));
+  }
 
+  // Monotone rearrangement is the unique optimum in 1-D for a convex cost.
+  log.status("EXACT", detail::SolverLog::Outcome::Optimal);
+  log.finish(total);
   return total;
 }
 

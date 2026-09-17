@@ -10,6 +10,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -25,10 +26,10 @@
 #pragma pop_macro("MIN")
 #pragma pop_macro("MAX")
 
-#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
 
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/grid_detail.hpp"
+#include "emdgrid/log_detail.hpp"
 #include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
@@ -59,19 +60,51 @@ constexpr bool should_extract_self_mass_v = []() {
   }
 }();
 
+/// Human-readable name for a LEMON min-cost-flow exit status.
+///
+/// NetworkSimplex and CostScaling each declare their own ProblemType, with the
+/// same three values, so this is templated on the solver rather than the enum.
+template <typename Solver>
+[[nodiscard]] std::string_view lemon_status_name(
+    typename Solver::ProblemType status) {
+  switch (status) {
+    case Solver::INFEASIBLE:
+      return "INFEASIBLE";
+    case Solver::OPTIMAL:
+      return "OPTIMAL";
+    case Solver::UNBOUNDED:
+      return "UNBOUNDED";
+  }
+  return "UNKNOWN";
+}
+
 /// Shared helper to solve LEMON Min-Cost Flow and collect flow edges.
+///
+/// Reports the backend's exit status through `log` before throwing on
+/// anything but an optimum, so a failed solve is visible in the log and not
+/// only in the exception.
 template <typename Solver, typename Graph>
 int64_t run_lemon_mcf(
     Graph& graph,
     typename Graph::template ArcMap<int64_t>& capacity,
     typename Graph::template ArcMap<int64_t>& cost,
     typename Graph::template NodeMap<int64_t>& supply,
+    SolverLog* log,
     // NOLINTNEXTLINE(readability-non-const-parameter)
     std::vector<std::vector<FlowEdge>>* flow_adj = nullptr) {
   Solver mcf(graph);
   mcf.upperMap(capacity).costMap(cost).supplyMap(supply);
-  if (mcf.run() != Solver::OPTIMAL) {
-    throw std::runtime_error("min-cost flow solve failed");
+  const typename Solver::ProblemType status = mcf.run();
+  if (log) {
+    log->phase("LEMON solve");
+    log->status(lemon_status_name<Solver>(status),
+                 status == Solver::OPTIMAL ? SolverLog::Outcome::Optimal
+                                           : SolverLog::Outcome::Degraded);
+  }
+  if (status != Solver::OPTIMAL) {
+    throw std::runtime_error(
+        "min-cost flow solve failed, status=" +
+        std::string(lemon_status_name<Solver>(status)));
   }
   if (flow_adj) {
     for (typename Graph::ArcIt a(graph); a != lemon::INVALID; ++a) {
@@ -107,6 +140,13 @@ template <std::size_t Dim, std::floating_point Scalar,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
+  detail::SolverLog log(
+      "mcf_lemon_l1",
+      fmt::format("Dim={}, algo={}, scale={}", Dim,
+                  algo == McfLemonAlgorithm::NetworkSimplex ? "NetworkSimplex"
+                                                            : "CostScaling",
+                  scale));
+
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
@@ -115,6 +155,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   const std::vector<int64_t> supply =
       detail::quantize_net_supply(h1, h2, scale);
   const int64_t cap_val = detail::total_positive_supply(supply);
+  log.phase("supply setup", fmt::format("nodes={}", n_nodes));
 
   using Graph = lemon::SmartDigraph;
   using Node = Graph::Node;
@@ -147,6 +188,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     supply_map[nodes[i]] = supply[i];
   }
 
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", n_nodes, graph.arcNum()));
+
   int64_t raw_optimal_cost = 0;
   std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
   auto* flow_adj_ptr = plan ? &flow_adj : nullptr;
@@ -154,11 +198,11 @@ template <std::size_t Dim, std::floating_point Scalar,
   if (algo == McfLemonAlgorithm::NetworkSimplex) {
     using Solver = lemon::NetworkSimplex<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   } else {
     using Solver = lemon::CostScaling<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   }
 
   const CompScalar total_cost =
@@ -173,8 +217,11 @@ template <std::size_t Dim, std::floating_point Scalar,
 
     detail::decompose_flows(&flow_adj, supply, n_nodes, scale,
                             std::identity{}, plan);
+    log.phase("flow decomposition",
+              fmt::format("entries={}", plan->flow.size()));
   }
 
+  log.finish(total_cost);
   return total_cost;
 }
 
@@ -199,19 +246,18 @@ template <std::size_t Dim, std::floating_point Scalar,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
+  detail::SolverLog log(
+      "mcf_dpartion",
+      fmt::format("Dim={}, algo={}, scale={}", Dim,
+                  algo == McfLemonAlgorithm::NetworkSimplex ? "NetworkSimplex"
+                                                            : "CostScaling",
+                  scale));
+
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
-
-  const char* algo_str =
-      (algo == McfLemonAlgorithm::NetworkSimplex) ? "NetworkSimplex"
-                                                   : "CostScaling";
-  spdlog::info("Starting dpartion solver (Dim={}, algo={})...", Dim, algo_str);
-
-  const Timer total_timer;
-  Timer phase_timer;
 
   const std::size_t total_nodes = (Dim + 1) * n_nodes;
   const std::size_t layer_dim_offset = Dim * n_nodes;
@@ -262,9 +308,8 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   const int64_t cap_val = detail::total_positive_supply(supply);
 
-  spdlog::info("dpartion supply setup took {:.3f} ms",
-               phase_timer.elapsed_milliseconds());
-  phase_timer.reset();
+  log.phase("supply setup",
+            fmt::format("bins={}, layered nodes={}", n_nodes, total_nodes));
 
   using Graph = lemon::SmartDigraph;
   using Node = Graph::Node;
@@ -321,9 +366,8 @@ template <std::size_t Dim, std::floating_point Scalar,
     supply_map[nodes[i]] = supply[i];
   }
 
-  spdlog::info("dpartion graph construction took {:.3f} ms (nodes={}, arcs={})",
-               phase_timer.elapsed_milliseconds(), total_nodes, expected_arcs);
-  phase_timer.reset();
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", total_nodes, expected_arcs));
 
   int64_t raw_optimal_cost = 0;
   std::vector<std::vector<detail::FlowEdge>> flow_adj(total_nodes);
@@ -332,21 +376,17 @@ template <std::size_t Dim, std::floating_point Scalar,
   if (algo == McfLemonAlgorithm::NetworkSimplex) {
     using Solver = lemon::NetworkSimplex<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   } else {
     using Solver = lemon::CostScaling<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   }
 
   const CompScalar total_cost =
       static_cast<CompScalar>(raw_optimal_cost) / scale;
 
-  spdlog::info("dpartion LEMON solve took {:.3f} ms",
-               phase_timer.elapsed_milliseconds());
-
   if (plan) {
-    phase_timer.reset();
     plan->source.clear();
     plan->target.clear();
     plan->flow.clear();
@@ -365,13 +405,11 @@ template <std::size_t Dim, std::floating_point Scalar,
           return node - layer_dim_offset;
         },
         plan);
-    spdlog::info("dpartion plan extraction took {:.3f} ms",
-                 phase_timer.elapsed_milliseconds());
+    log.phase("flow decomposition",
+              fmt::format("entries={}", plan->flow.size()));
   }
 
-  spdlog::info("dpartion total execution took {:.3f} ms",
-               total_timer.elapsed_milliseconds());
-
+  log.finish(total_cost);
   return total_cost;
 }
 

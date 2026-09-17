@@ -10,10 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
-
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/knothe_rosenblatt_detail.hpp"
+#include "emdgrid/log_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -35,6 +34,11 @@ template <std::size_t Dim, std::floating_point Scalar,
     GroundMetric metric = GroundMetric::L1,
     std::span<const std::size_t> dimension_order = {},
     SparseTransportPlanPtr<CompScalar> plan = nullptr) {
+  detail::SolverLog log(
+      "knothe_rosenblatt",
+      fmt::format("Dim={}, metric={}", Dim,
+                  metric == GroundMetric::L1 ? "L1" : "SqEuclidean"));
+
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -58,6 +62,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     total_mass_h1 += static_cast<CompScalar>(h1.data()[i]);
   }
   if (total_mass_h1 <= eps) {
+    spdlog::info("knothe_rosenblatt: source histogram has no mass, "
+                 "nothing to transport");
+    log.finish(CompScalar{0});
     return CompScalar{0};
   }
 
@@ -65,16 +72,10 @@ template <std::size_t Dim, std::floating_point Scalar,
   current_tasks.push_back({0, 0, total_mass_h1});
 
   CompScalar total_cost{0};
-
-  spdlog::info(
-      "Starting Knothe-Rosenblatt transport solver (Dim={}, metric={})...",
-      Dim, metric == GroundMetric::L1 ? "L1" : "SqEuclidean");
+  log.phase("setup", fmt::format("bins={}", node_count));
 
   for (std::size_t k = 0; k < Dim; ++k) {
     const std::size_t current_dim = order[k];
-    spdlog::info(
-        "Knothe-Rosenblatt processing dimension {}/{} (axis {})...", k + 1,
-        Dim, current_dim);
     const std::size_t extent = shape[current_dim];
     const std::size_t dim_stride = strides[current_dim];
 
@@ -258,11 +259,17 @@ template <std::size_t Dim, std::floating_point Scalar,
 #endif
 
     current_tasks = std::move(next_tasks);
+    log.phase(fmt::format("axis {} of {} (dimension {})", k + 1, Dim,
+                          current_dim),
+              fmt::format("subproblems={}", num_tasks));
   }
 
-  spdlog::info("Knothe-Rosenblatt solver completed with total cost {}.",
-               total_cost);
-
+  // A sequence of 1-D optimal couplings is not an optimal joint coupling, so
+  // this is an upper bound; report it in the same slot the exact solvers use
+  // for their backend status.
+  log.status("KNOTHE_ROSENBLATT_UPPER_BOUND",
+             detail::SolverLog::Outcome::Heuristic);
+  log.finish(total_cost);
   return total_cost;
 }
 

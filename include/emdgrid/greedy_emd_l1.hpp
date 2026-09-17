@@ -6,11 +6,10 @@
 #include <stdexcept>
 #include <vector>
 
-#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
-
 #include "emdgrid/emd_1d.hpp"
 #include "emdgrid/emd_l1_detail.hpp"
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/log_detail.hpp"
 
 namespace emdgrid {
 
@@ -43,6 +42,8 @@ template <std::size_t Dim, std::floating_point Scalar,
     const GridDataView<Dim, Scalar>& h1,
     const GridDataView<Dim, Scalar>& h2,
     SparseTransportPlanPtr<CompScalar> plan = nullptr) {
+  detail::SolverLog log("greedy_emd_l1_approx", fmt::format("Dim={}", Dim));
+
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -50,10 +51,10 @@ template <std::size_t Dim, std::floating_point Scalar,
   const std::size_t n_nodes = layout.node_count();
   const std::size_t n_edges = layout.edge_count();
 
-  spdlog::info("Computing greedy EMD-L1 upper bound approximation...");
-
   detail::LingOkadaSolver<CompScalar> solver(n_nodes, n_edges);
   detail::greedy_init<Dim, Scalar, CompScalar>(h1, h2, solver);
+  log.phase("greedy initialisation",
+            fmt::format("nodes={}, edges={}", n_nodes, n_edges));
 
   SparseTransportPlan<CompScalar> local_plan;
   SparseTransportPlan<CompScalar>* target_plan = plan ? plan : &local_plan;
@@ -66,6 +67,8 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
   detail::extract_transport_plan<CompScalar>(
       n_nodes, h1_c, h2_c, solver.get_directed_edge_flows(), target_plan);
+  log.phase("plan extraction",
+            fmt::format("entries={}", target_plan->flow.size()));
 
   CompScalar cost{0};
   for (std::size_t k = 0; k < target_plan->flow.size(); ++k) {
@@ -79,7 +82,12 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
     cost += target_plan->flow[k] * l1_dist;
   }
+  log.phase("cost accumulation");
 
+  // No pivoting happens here, so the result is a feasible upper bound rather
+  // than an optimum; say so in the same slot the exact solvers use.
+  log.status("GREEDY_UPPER_BOUND", detail::SolverLog::Outcome::Heuristic);
+  log.finish(cost);
   return cost;
 }
 

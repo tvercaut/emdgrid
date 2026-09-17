@@ -10,6 +10,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -62,10 +63,40 @@
 
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/grid_detail.hpp"
+#include "emdgrid/log_detail.hpp"
 #include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
+
+namespace detail {
+
+/// Human-readable name for an OR-Tools min-cost-flow exit status.
+[[nodiscard]] inline std::string_view ortools_status_name(
+    operations_research::SimpleMinCostFlow::Status status) {
+  using Mcf = operations_research::SimpleMinCostFlow;
+  switch (status) {
+    case Mcf::NOT_SOLVED:
+      return "NOT_SOLVED";
+    case Mcf::OPTIMAL:
+      return "OPTIMAL";
+    case Mcf::FEASIBLE:
+      return "FEASIBLE";
+    case Mcf::INFEASIBLE:
+      return "INFEASIBLE";
+    case Mcf::UNBALANCED:
+      return "UNBALANCED";
+    case Mcf::BAD_RESULT:
+      return "BAD_RESULT";
+    case Mcf::BAD_COST_RANGE:
+      return "BAD_COST_RANGE";
+    case Mcf::BAD_CAPACITY_RANGE:
+      return "BAD_CAPACITY_RANGE";
+  }
+  return "UNKNOWN";
+}
+
+}  // namespace detail
 
 /// EMD-L1 for multi-dimensional grid histograms solved via Min-Cost Flow
 /// using OR-Tools SimpleMinCostFlow.
@@ -85,6 +116,8 @@ template <std::size_t Dim, std::floating_point Scalar,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
+  detail::SolverLog log("mcf_l1", fmt::format("Dim={}, scale={}", Dim, scale));
+
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
@@ -93,6 +126,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   const std::vector<int64_t> supply =
       detail::quantize_net_supply(h1, h2, scale);
   const int64_t cap_val = detail::total_positive_supply(supply);
+  log.phase("supply setup", fmt::format("nodes={}", n_nodes));
 
   operations_research::SimpleMinCostFlow mcf;
 
@@ -111,10 +145,19 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
 
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", n_nodes, mcf.NumArcs()));
+
   const auto status = mcf.Solve();
+  log.phase("OR-Tools solve");
+  log.status(detail::ortools_status_name(status),
+             status == operations_research::SimpleMinCostFlow::OPTIMAL
+                 ? detail::SolverLog::Outcome::Optimal
+                 : detail::SolverLog::Outcome::Degraded);
   if (status != operations_research::SimpleMinCostFlow::OPTIMAL) {
-    throw std::runtime_error("min-cost flow solve failed, status=" +
-                             std::to_string(static_cast<int>(status)));
+    throw std::runtime_error(
+        "min-cost flow solve failed, status=" +
+        std::string(detail::ortools_status_name(status)));
   }
 
   const CompScalar total_cost =
@@ -139,8 +182,10 @@ template <std::size_t Dim, std::floating_point Scalar,
 
     detail::decompose_flows(&flow_adj, supply, n_nodes, scale,
                             std::identity{}, plan);
+    log.phase("plan extraction", fmt::format("entries={}", plan->flow.size()));
   }
 
+  log.finish(total_cost);
   return total_cost;
 }
 

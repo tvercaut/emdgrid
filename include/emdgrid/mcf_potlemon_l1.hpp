@@ -5,6 +5,8 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
@@ -14,10 +16,32 @@
 #include "emdgrid/detail/potlemon/sparse_bipartitegraph.h"
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/grid_detail.hpp"
+#include "emdgrid/log_detail.hpp"
 #include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
+
+namespace detail {
+
+/// Human-readable name for a potlemon network-simplex exit status.
+template <typename Simplex>
+[[nodiscard]] std::string_view potlemon_status_name(
+    typename Simplex::ProblemType status) {
+  switch (status) {
+    case Simplex::INFEASIBLE:
+      return "INFEASIBLE";
+    case Simplex::OPTIMAL:
+      return "OPTIMAL";
+    case Simplex::UNBOUNDED:
+      return "UNBOUNDED";
+    case Simplex::MAX_ITER_REACHED:
+      return "MAX_ITER_REACHED";
+  }
+  return "UNKNOWN";
+}
+
+}  // namespace detail
 
 /// EMD-L1 for multi-dimensional grid histograms solved via the potlemon
 /// Network Simplex solver.
@@ -48,6 +72,10 @@ template <std::size_t Dim, std::floating_point Scalar,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>,
     uint64_t max_iter = 500000) {
+  detail::SolverLog log(
+      "mcf_potlemon_l1",
+      fmt::format("Dim={}, scale={}, max_iter={}", Dim, scale, max_iter));
+
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
@@ -70,7 +98,13 @@ template <std::size_t Dim, std::floating_point Scalar,
       break;
     }
   }
+  log.phase("supply setup", fmt::format("nodes={}", n_nodes));
+
   if (!any_nonzero) {
+    spdlog::info(
+        "mcf_potlemon_l1: histograms are identical after quantization, "
+        "nothing to transport");
+    log.finish(CompScalar{0});
     return static_cast<CompScalar>(0.0);
   }
 
@@ -97,15 +131,26 @@ template <std::size_t Dim, std::floating_point Scalar,
     net.setCost(Digraph::arcFromId(k), 1);
   }
 
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", n_nodes, total_arcs));
+
   const auto status = net.run();
+  log.phase("network simplex solve");
+  using Outcome = detail::SolverLog::Outcome;
+  log.status(detail::potlemon_status_name<Simplex>(status),
+             status == Simplex::OPTIMAL ? Outcome::Optimal
+                                        : Outcome::Degraded);
   if (status != Simplex::OPTIMAL && status != Simplex::MAX_ITER_REACHED) {
-    throw std::runtime_error("potlemon network simplex solve failed");
+    throw std::runtime_error(
+        "potlemon network simplex solve failed, status=" +
+        std::string(detail::potlemon_status_name<Simplex>(status)));
   }
 
   const int64_t raw_cost = net.totalCost();
   const CompScalar total_cost = static_cast<CompScalar>(raw_cost) / scale;
 
   if (!plan) {
+    log.finish(total_cost);
     return total_cost;
   }
 
@@ -126,7 +171,10 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   detail::decompose_flows(&flow_adj, node_supply, n_nodes, scale,
                           std::identity{}, plan);
+  log.phase("flow decomposition",
+            fmt::format("entries={}", plan->flow.size()));
 
+  log.finish(total_cost);
   return total_cost;
 }
 
