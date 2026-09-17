@@ -13,6 +13,7 @@
 
 #include "emdgrid/emd_l1.hpp"
 #include "emdgrid/emd_lemon.hpp"
+#include "emdgrid/emd_potlemon.hpp"
 #include "emdgrid/emdgrid.hpp"
 #include "emdgrid/greedy_emd_l1.hpp"
 #include "emdgrid/knothe_rosenblatt.hpp"
@@ -175,6 +176,9 @@ void run_benchmarks(const RunOptions& opts) {
   const bool run_emd_lemon = (solver == "all_extended" ||
                               solver == "emd_lemon" ||
                               solver == "lemon_bipartite");
+  const bool run_emd_potlemon = (solver == "all_extended" ||
+                                 solver == "emd_potlemon" ||
+                                 solver == "potlemon_bipartite");
   const bool run_greedy = (solver == "all" || solver == "greedy");
   const bool run_kr = (solver == "all" || solver == "kr" ||
                        solver == "knothe_rosenblatt");
@@ -311,6 +315,37 @@ void run_benchmarks(const RunOptions& opts) {
     }
   }
 
+  if (run_emd_potlemon) {
+    std::cout << "\n--- emd_potlemon (POT bipartite, fully lazy) ---\n";
+
+    const struct PotVariant {
+      const char* name;
+      emdgrid::GroundMetric metric;
+    } pot_variants[] = {
+        {"L1", emdgrid::GroundMetric::L1},
+        {"SqEuclidean", emdgrid::GroundMetric::SqEuclidean},
+    };
+
+    for (const auto& [name, metric] : pot_variants) {
+      Plan plan;
+      const emdgrid::Timer timer;
+      const CompScalar dist = emdgrid::emd_potlemon<3, double, CompScalar>(
+          h1, h2, metric, opts.need_plan ? &plan : nullptr);
+      const double elapsed_ms = timer.elapsed_milliseconds();
+
+      std::cout << "Variant [" << name << "]:\n";
+      std::cout << "  Distance: " << dist << '\n';
+      std::cout << "  Computation time: " << elapsed_ms << " ms\n";
+      if (opts.need_plan) {
+        std::cout << "  Transport plan flow entries: " << plan.source.size()
+                  << '\n';
+        if (opts.diagnostics) {
+          run_diagnostics(layout, h1, h2, plan, metric, dist);
+        }
+      }
+    }
+  }
+
   if (run_greedy) {
     Plan plan;
     const emdgrid::Timer timer;
@@ -355,10 +390,10 @@ int main(int argc, char** argv) {
   app.add_option("-s,--solver", opts.solver,
                  "Solver to run: 'emd_l1', 'mcf_l1', 'mcf_lemon_ns', "
                  "'mcf_lemon_cs', 'mcf_potlemon', 'dpartion', 'opencv_emd', "
-                 "'emd_lemon', 'greedy', 'kr', 'all' (default, the "
-                 "grid-structure solvers), or 'all_extended' (the dense "
-                 "bipartite solvers 'opencv_emd' and 'emd_lemon', which are "
-                 "slow on large grids)");
+                 "'emd_lemon', 'emd_potlemon', 'greedy', 'kr', 'all' "
+                 "(default, the grid-structure solvers), or 'all_extended' "
+                 "(the dense bipartite solvers 'opencv_emd', 'emd_lemon' and "
+                 "'emd_potlemon', which are slow on large grids)");
   app.add_option("-m,--metric", kr_metric_str,
                  "Knothe-Rosenblatt metric: 'l1' or 'sqeuclidean' "
                  "(default: 'l1')");

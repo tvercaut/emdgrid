@@ -114,14 +114,15 @@ int64_t run_lemon_bipartite_mcf(const Graph& graph, const CapMap& capacity,
 /// laziness here saves the caller's cost matrix and nothing more; it does not
 /// make the solve sub-quadratic in memory.
 ///
-/// POT's `EMD_wrap_lazy` does not pay this. Its forked simplex has storage
-/// modes (ArtificialArcCosts, SparseArcFlows, PackedArcStates) that keep
-/// essentially nothing per arc, and the same problem fits in 0.12 GB there
-/// against 3.4 GB here — while running ~4-5x slower, because it recomputes a
-/// distance at every pricing step where LEMON reads a packed array. This port
-/// buys LEMON's speed and its CostScaling option; it does not buy POT's memory
-/// profile, and no amount of work on the graph representation will, because
-/// the cost is proportional to the arc count LEMON is handed.
+/// POT's `EMD_wrap_lazy` does not pay this: its forked simplex has storage
+/// modes that keep essentially nothing per arc. emd_potlemon is that same
+/// approach on the vendored potlemon simplex, and it solves the 20^3 problem
+/// above in 0.041 GB against 3.4 GB here, for a bit-identical cost — at ~6x
+/// the runtime, because recomputing a distance at every pricing step is slower
+/// than reading a packed array. So this solver buys LEMON's speed and its
+/// CostScaling option, and emd_potlemon buys the memory; no work on the graph
+/// representation can make this one do both, because its footprint is
+/// proportional to the arc count LEMON is handed.
 ///
 /// **So do not reach for this solver when memory-bound.** Every cost it
 /// accepts is separable, and for a separable cost mcf_dpartion solves the
@@ -129,7 +130,9 @@ int64_t run_lemon_bipartite_mcf(const Graph& graph, const CapMap& capacity,
 /// than `n^2`: 480k instead of 64M on that same 20^3 grid, reaching a
 /// bit-identical optimum in 0.62 s and 0.078 GB against 5.0 s and 3.4 GB here.
 /// The saving is a factor `s^(Dim-1)/Dim` for a side-`s` cube, so it widens as
-/// the grid grows. This solver exists to be the independent check on that one.
+/// the grid grows. Where the bipartite formulation really is wanted and the
+/// dense problem will not fit, emd_potlemon is the one to use. This solver
+/// exists to be the independent check on both.
 ///
 /// **Self-mass.** When `CostFn::extract_self_mass` is true — as for L1Cost,
 /// and for any ground metric obeying the triangle inequality — the mass
