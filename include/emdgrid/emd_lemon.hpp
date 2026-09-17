@@ -96,14 +96,40 @@ int64_t run_lemon_bipartite_mcf(const Graph& graph, const CapMap& capacity,
 /// and with the point coordinates coming from the grid layout instead of from
 /// a caller-supplied array.
 ///
-/// **Lazy costs.** The `n·m` arc costs are never assembled into a matrix:
-/// the graph's arcs are implicit (detail::FullBipartiteDigraph) and the cost
-/// map computes `cost_fn` from the two bins' grid coordinates on demand. Note
-/// that LEMON, unlike POT's simplex, still copies the costs into its own
-/// internal arrays when `costMap` is applied, so laziness saves the caller's
-/// `O(n·m)` cost matrix but does not make the solve itself sub-quadratic in
-/// memory. As with opencv_emd, expect this to be practical up to a few
-/// thousand occupied bins.
+/// **What is lazy.** The `n·m` arc costs are never assembled into a matrix on
+/// this side of the call. The arcs are implicit (detail::FullBipartiteDigraph),
+/// the cost map (detail::LazyArcMap) evaluates `cost_fn` from the two bins'
+/// grid coordinates on demand, and the capacity is a lemon::ConstMap. Stating
+/// the problem costs O(n + m), and building the graph is O(1).
+///
+/// **What is not lazy, and it dominates.** LEMON's NetworkSimplex copies
+/// everything into its own arc-indexed arrays as soon as `reset()` runs, and
+/// offers no way to opt out: `_source` and `_target` (int), `_lower`,
+/// `_upper`, `_cap`, `_cost` and `_flow` (Value/Cost) and `_state` (char), plus
+/// the `ArcMap<int> _arc_id` it indexes them through. With Value = Cost =
+/// int64_t that is 53 bytes for every one of the `n·m` arcs no matter what the
+/// cost map does. Measured on a 20^3 grid under a squared Euclidean metric —
+/// 8000 x 8000 arcs, since that metric gets no self-mass extraction — peak RSS
+/// is 3.4 GB, i.e. those 53 bytes/arc plus ~20 MB of everything else. So
+/// laziness here saves the caller's cost matrix and nothing more; it does not
+/// make the solve sub-quadratic in memory.
+///
+/// POT's `EMD_wrap_lazy` does not pay this. Its forked simplex has storage
+/// modes (ArtificialArcCosts, SparseArcFlows, PackedArcStates) that keep
+/// essentially nothing per arc, and the same problem fits in 0.12 GB there
+/// against 3.4 GB here — while running ~4-5x slower, because it recomputes a
+/// distance at every pricing step where LEMON reads a packed array. This port
+/// buys LEMON's speed and its CostScaling option; it does not buy POT's memory
+/// profile, and no amount of work on the graph representation will, because
+/// the cost is proportional to the arc count LEMON is handed.
+///
+/// **So do not reach for this solver when memory-bound.** Every cost it
+/// accepts is separable, and for a separable cost mcf_dpartion solves the
+/// identical problem on a layered DAG with `n · sum_k shape[k]` arcs rather
+/// than `n^2`: 480k instead of 64M on that same 20^3 grid, reaching a
+/// bit-identical optimum in 0.62 s and 0.078 GB against 5.0 s and 3.4 GB here.
+/// The saving is a factor `s^(Dim-1)/Dim` for a side-`s` cube, so it widens as
+/// the grid grows. This solver exists to be the independent check on that one.
 ///
 /// **Self-mass.** When `CostFn::extract_self_mass` is true — as for L1Cost,
 /// and for any ground metric obeying the triangle inequality — the mass
