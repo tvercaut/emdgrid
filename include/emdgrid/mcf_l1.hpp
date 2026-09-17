@@ -10,6 +10,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -61,9 +62,41 @@
 #pragma pop_macro("CHECK")
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/grid_detail.hpp"
+#include "emdgrid/log_detail.hpp"
+#include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
+
+namespace detail {
+
+/// Human-readable name for an OR-Tools min-cost-flow exit status.
+[[nodiscard]] inline std::string_view ortools_status_name(
+    operations_research::SimpleMinCostFlow::Status status) {
+  using Mcf = operations_research::SimpleMinCostFlow;
+  switch (status) {
+    case Mcf::NOT_SOLVED:
+      return "NOT_SOLVED";
+    case Mcf::OPTIMAL:
+      return "OPTIMAL";
+    case Mcf::FEASIBLE:
+      return "FEASIBLE";
+    case Mcf::INFEASIBLE:
+      return "INFEASIBLE";
+    case Mcf::UNBALANCED:
+      return "UNBALANCED";
+    case Mcf::BAD_RESULT:
+      return "BAD_RESULT";
+    case Mcf::BAD_COST_RANGE:
+      return "BAD_COST_RANGE";
+    case Mcf::BAD_CAPACITY_RANGE:
+      return "BAD_CAPACITY_RANGE";
+  }
+  return "UNKNOWN";
+}
+
+}  // namespace detail
 
 /// EMD-L1 for multi-dimensional grid histograms solved via Min-Cost Flow
 /// using OR-Tools SimpleMinCostFlow.
@@ -83,94 +116,27 @@ template <std::size_t Dim, std::floating_point Scalar,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
-  if (h1.layout().shape() != h2.layout().shape()) {
-    throw std::invalid_argument("histogram shapes do not match");
-  }
+  detail::SolverLog log("mcf_l1", fmt::format("Dim={}, scale={}", Dim, scale));
+
+  detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
-  const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
-  CompScalar t1{0};
-  CompScalar t2{0};
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
-      throw std::invalid_argument("histograms must be nonnegative");
-    }
-    t1 += v1;
-    t2 += v2;
-  }
-
-  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
-      std::abs(t2 - CompScalar{1}) > mass_tol) {
-    throw std::invalid_argument("expected unit-mass histograms");
-  }
-
-  std::vector<int64_t> supply(n_nodes);
-  std::size_t max_abs_idx = 0;
-  int64_t max_abs_val = -1;
-
-  CompScalar cum_target{0};
-  int64_t cum_scaled_prev = 0;
-
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar diff = static_cast<CompScalar>(h1.data()[i]) -
-                            static_cast<CompScalar>(h2.data()[i]);
-    cum_target += diff;
-    const int64_t cum_scaled = std::llround(cum_target * scale);
-    const int64_t s = cum_scaled - cum_scaled_prev;
-    supply[i] = s;
-    cum_scaled_prev = cum_scaled;
-
-    const int64_t abs_s = std::abs(s);
-    if (abs_s > max_abs_val) {
-      max_abs_val = abs_s;
-      max_abs_idx = i;
-    }
-  }
-
-  // Fix rounding drift so total supply sums to exactly 0
-  if (cum_scaled_prev != 0) {
-    supply[max_abs_idx] -= cum_scaled_prev;
-  }
-
-  int64_t total_pos_supply = 0;
-  for (const int64_t s : supply) {
-    if (s > 0) {
-      total_pos_supply += s;
-    }
-  }
-  const int64_t cap_val = std::max<int64_t>(total_pos_supply, 1);
+  const std::vector<int64_t> supply =
+      detail::quantize_net_supply(h1, h2, scale);
+  const int64_t cap_val = detail::total_positive_supply(supply);
+  log.phase("supply setup", fmt::format("nodes={}", n_nodes));
 
   operations_research::SimpleMinCostFlow mcf;
 
-  std::array<std::ptrdiff_t, Dim> stride{};
-  stride[Dim - 1] = 1;
-  for (std::size_t a = Dim - 1; a-- > 0;) {
-    stride[a] = stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
-  }
-
-  for (std::size_t a = 0; a < Dim; ++a) {
-    const std::size_t extent = shape[a];
-    if (extent < 2) {
-      continue;
-    }
-    const std::ptrdiff_t st = stride[a];
-    const auto extent_ptrdiff = static_cast<std::ptrdiff_t>(extent);
-
-    for (std::size_t u = 0; u < n_nodes; ++u) {
-      const std::ptrdiff_t u_idx = static_cast<std::ptrdiff_t>(u);
-      if ((u_idx / st) % extent_ptrdiff < extent_ptrdiff - 1) {
-        using NodeIdx = operations_research::SimpleMinCostFlow::NodeIndex;
-        const auto u_node = static_cast<NodeIdx>(u);
-        const auto v = static_cast<NodeIdx>(u + st);
-        mcf.AddArcWithCapacityAndUnitCost(u_node, v, cap_val, 1);
-        mcf.AddArcWithCapacityAndUnitCost(v, u_node, cap_val, 1);
-      }
-    }
-  }
+  detail::for_each_grid_arc(layout, [&](std::size_t u, std::size_t v) {
+    using NodeIdx = operations_research::SimpleMinCostFlow::NodeIndex;
+    const auto u_node = static_cast<NodeIdx>(u);
+    const auto v_node = static_cast<NodeIdx>(v);
+    mcf.AddArcWithCapacityAndUnitCost(u_node, v_node, cap_val, 1);
+    mcf.AddArcWithCapacityAndUnitCost(v_node, u_node, cap_val, 1);
+  });
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     if (supply[i] != 0) {
@@ -179,10 +145,19 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
 
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", n_nodes, mcf.NumArcs()));
+
   const auto status = mcf.Solve();
+  log.phase("OR-Tools solve");
+  log.status(detail::ortools_status_name(status),
+             status == operations_research::SimpleMinCostFlow::OPTIMAL
+                 ? detail::SolverLog::Outcome::Optimal
+                 : detail::SolverLog::Outcome::Degraded);
   if (status != operations_research::SimpleMinCostFlow::OPTIMAL) {
-    throw std::runtime_error("min-cost flow solve failed, status=" +
-                             std::to_string(static_cast<int>(status)));
+    throw std::runtime_error(
+        "min-cost flow solve failed, status=" +
+        std::string(detail::ortools_status_name(status)));
   }
 
   const CompScalar total_cost =
@@ -193,23 +168,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->target.clear();
     plan->flow.clear();
 
-    for (std::size_t i = 0; i < n_nodes; ++i) {
-      const CompScalar self_mass =
-          std::min(static_cast<CompScalar>(h1.data()[i]),
-                   static_cast<CompScalar>(h2.data()[i]));
-      if (self_mass > CompScalar{0}) {
-        plan->source.push_back(static_cast<uint32_t>(i));
-        plan->target.push_back(static_cast<uint32_t>(i));
-        plan->flow.push_back(self_mass);
-      }
-    }
+    detail::emit_self_mass(h1, h2, plan);
 
-    struct FlowEdge {
-      uint32_t head;
-      int64_t flow;
-    };
-
-    std::vector<std::vector<FlowEdge>> flow_adj(n_nodes);
+    std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
     for (int a = 0; a < mcf.NumArcs(); ++a) {
       const int64_t f = mcf.Flow(a);
       if (f > 0) {
@@ -219,63 +180,12 @@ template <std::size_t Dim, std::floating_point Scalar,
       }
     }
 
-    std::vector<int64_t> rem_supply = supply;
-    std::vector<std::size_t> ptr(n_nodes, 0);
-
-    for (std::size_t src = 0; src < n_nodes; ++src) {
-      while (rem_supply[src] > 0) {
-        std::vector<std::pair<std::size_t, std::size_t>> path_edges;
-        std::size_t cur = src;
-
-        while (true) {
-          if (rem_supply[cur] < 0 && cur != src) {
-            break;
-          }
-          auto& list = flow_adj[cur];
-          std::size_t p = ptr[cur];
-          while (p < list.size() && list[p].flow <= 0) {
-            ++p;
-          }
-          ptr[cur] = p;
-          if (p >= list.size()) {
-            break;
-          }
-          path_edges.emplace_back(cur, p);
-          cur = static_cast<std::size_t>(list[p].head);
-        }
-
-        if (path_edges.empty()) {
-          break;
-        }
-
-        const std::size_t target = cur;
-        if (rem_supply[target] >= 0) {
-          break;
-        }
-
-        int64_t bottleneck = rem_supply[src];
-        bottleneck = std::min(bottleneck, -rem_supply[target]);
-        for (const auto& [u, p] : path_edges) {
-          bottleneck = std::min(bottleneck, flow_adj[u][p].flow);
-        }
-
-        if (bottleneck <= 0) {
-          break;
-        }
-
-        for (const auto& [u, p] : path_edges) {
-          flow_adj[u][p].flow -= bottleneck;
-        }
-        rem_supply[src] -= bottleneck;
-        rem_supply[target] += bottleneck;
-
-        plan->source.push_back(static_cast<uint32_t>(src));
-        plan->target.push_back(static_cast<uint32_t>(target));
-        plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
-      }
-    }
+    detail::decompose_flows(&flow_adj, supply, n_nodes, scale,
+                            std::identity{}, plan);
+    log.phase("plan extraction", fmt::format("entries={}", plan->flow.size()));
   }
 
+  log.finish(total_cost);
   return total_cost;
 }
 

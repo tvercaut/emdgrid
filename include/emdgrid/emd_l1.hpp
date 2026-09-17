@@ -12,6 +12,7 @@
 #include "emdgrid/emd_1d.hpp"
 #include "emdgrid/emd_l1_detail.hpp"
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/log_detail.hpp"
 #include "emdgrid/greedy_emd_l1.hpp"
 
 namespace emdgrid {
@@ -48,6 +49,9 @@ template <std::size_t Dim, std::floating_point Scalar,
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     int max_iter = 500000) {
+  detail::SolverLog log("emd_l1",
+                        fmt::format("Dim={}, max_iter={}", Dim, max_iter));
+
   if (h1.layout().shape() != h2.layout().shape()) {
     throw std::invalid_argument("histogram shapes do not match");
   }
@@ -58,6 +62,8 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   detail::LingOkadaSolver<CompScalar> solver(n_nodes, n_edges);
   detail::greedy_init<Dim, Scalar, CompScalar>(h1, h2, solver);
+  log.phase("greedy initialisation",
+            fmt::format("nodes={}, edges={}", n_nodes, n_edges));
 
   // Choose the grid centre as the spanning-tree root
   std::ptrdiff_t root = 0;
@@ -73,6 +79,10 @@ template <std::size_t Dim, std::floating_point Scalar,
   }
 
   const CompScalar cost = solver.solve(root, max_iter);
+  log.phase("network simplex", fmt::format("pivots={}", solver.pivots()));
+  using Outcome = detail::SolverLog::Outcome;
+  log.status(solver.converged() ? "OPTIMAL" : "MAX_ITER_REACHED",
+             solver.converged() ? Outcome::Optimal : Outcome::Degraded);
 
   if (plan) {
     std::vector<CompScalar> h1_c(n_nodes);
@@ -83,8 +93,10 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
     detail::extract_transport_plan<CompScalar>(
         n_nodes, h1_c, h2_c, solver.get_directed_edge_flows(), plan);
+    log.phase("plan extraction", fmt::format("entries={}", plan->flow.size()));
   }
 
+  log.finish(cost);
   return cost;
 }
 

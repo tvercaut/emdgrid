@@ -499,6 +499,96 @@ TEST_CASE("mcf solvers 3D: plan total sum on 10x10x10 histograms") {
   }
 }
 
+TEST_CASE("mcf solvers 3D: plan reconstruction on sparse histograms") {
+  // Most bins are empty, so many sinks quantize to exactly zero supply. The
+  // shared flow decomposition has to walk past those without stalling or
+  // dropping mass — dense random histograms never exercise that path.
+  constexpr std::size_t extent = 6;
+  const emdgrid::GridLayout<3> layout({extent, extent, extent});
+  const std::size_t n_bins = layout.node_count();
+
+  std::vector<double> h1_data(n_bins, 0.0);
+  std::vector<double> h2_data(n_bins, 0.0);
+  for (std::size_t i = 0; i < n_bins; i += 17) {
+    h1_data[i] = 1.0;
+  }
+  for (std::size_t i = 5; i < n_bins; i += 23) {
+    h2_data[i] = 1.0;
+  }
+  const auto normalize = [](std::vector<double>* v) {
+    double total = 0.0;
+    for (const double x : *v) {
+      total += x;
+    }
+    for (double& x : *v) {
+      x /= total;
+    }
+  };
+  normalize(&h1_data);
+  normalize(&h2_data);
+
+  const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+  const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+  const auto check_plan = [&](const emdgrid::SparseTransportPlan<>& plan,
+                              double cost, bool sqeuclidean) {
+    double total_flow = 0.0;
+    double reconstructed = 0.0;
+    for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+      CHECK(plan.flow[k] > 0.0);
+      total_flow += plan.flow[k];
+
+      const auto c_src =
+          layout.coordinates(static_cast<std::ptrdiff_t>(plan.source[k]));
+      const auto c_tgt =
+          layout.coordinates(static_cast<std::ptrdiff_t>(plan.target[k]));
+      double dist = 0.0;
+      for (std::size_t a = 0; a < 3; ++a) {
+        const double d = static_cast<double>(c_src[a] - c_tgt[a]);
+        dist += sqeuclidean ? (d * d) : std::abs(d);
+      }
+      reconstructed += plan.flow[k] * dist;
+    }
+    CHECK(total_flow == doctest::Approx(1.0).epsilon(1e-5));
+    CHECK(reconstructed == doctest::Approx(cost).epsilon(1e-5));
+  };
+
+  {
+    emdgrid::SparseTransportPlan<> plan;
+    const double cost = emdgrid::mcf_l1(h1, h2, &plan);
+    check_plan(plan, cost, false);
+  }
+
+  {
+    emdgrid::SparseTransportPlan<> plan;
+    const double cost = emdgrid::mcf_lemon_l1(
+        h1, h2, emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
+    check_plan(plan, cost, false);
+  }
+
+  {
+    emdgrid::SparseTransportPlan<> plan;
+    const double cost = emdgrid::mcf_potlemon_l1(h1, h2, &plan);
+    check_plan(plan, cost, false);
+  }
+
+  {
+    emdgrid::SparseTransportPlan<> plan;
+    const double cost = emdgrid::mcf_dpartion(
+        h1, h2, emdgrid::GroundMetric::L1,
+        emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
+    check_plan(plan, cost, false);
+  }
+
+  {
+    emdgrid::SparseTransportPlan<> plan;
+    const double cost = emdgrid::mcf_dpartion(
+        h1, h2, emdgrid::GroundMetric::SqEuclidean,
+        emdgrid::McfLemonAlgorithm::NetworkSimplex, &plan);
+    check_plan(plan, cost, true);
+  }
+}
+
 TEST_CASE(
     "mcf_lemon_l1 2D: transport plan computation and cost reconstruction") {
   const emdgrid::GridLayout<2> layout({2, 2});

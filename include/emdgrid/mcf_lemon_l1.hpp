@@ -10,6 +10,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -25,9 +26,11 @@
 #pragma pop_macro("MIN")
 #pragma pop_macro("MAX")
 
-#include <spdlog/spdlog.h>  // NOLINT(build/include_order)
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/grid_detail.hpp"
+#include "emdgrid/log_detail.hpp"
+#include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -57,25 +60,51 @@ constexpr bool should_extract_self_mass_v = []() {
   }
 }();
 
-/// Edge with target node and positive flow value.
-struct FlowEdge {
-  uint32_t head;
-  int64_t flow;
-};
+/// Human-readable name for a LEMON min-cost-flow exit status.
+///
+/// NetworkSimplex and CostScaling each declare their own ProblemType, with the
+/// same three values, so this is templated on the solver rather than the enum.
+template <typename Solver>
+[[nodiscard]] std::string_view lemon_status_name(
+    typename Solver::ProblemType status) {
+  switch (status) {
+    case Solver::INFEASIBLE:
+      return "INFEASIBLE";
+    case Solver::OPTIMAL:
+      return "OPTIMAL";
+    case Solver::UNBOUNDED:
+      return "UNBOUNDED";
+  }
+  return "UNKNOWN";
+}
 
 /// Shared helper to solve LEMON Min-Cost Flow and collect flow edges.
+///
+/// Reports the backend's exit status through `log` before throwing on
+/// anything but an optimum, so a failed solve is visible in the log and not
+/// only in the exception.
 template <typename Solver, typename Graph>
 int64_t run_lemon_mcf(
     Graph& graph,
     typename Graph::template ArcMap<int64_t>& capacity,
     typename Graph::template ArcMap<int64_t>& cost,
     typename Graph::template NodeMap<int64_t>& supply,
+    SolverLog* log,
     // NOLINTNEXTLINE(readability-non-const-parameter)
     std::vector<std::vector<FlowEdge>>* flow_adj = nullptr) {
   Solver mcf(graph);
   mcf.upperMap(capacity).costMap(cost).supplyMap(supply);
-  if (mcf.run() != Solver::OPTIMAL) {
-    throw std::runtime_error("min-cost flow solve failed");
+  const typename Solver::ProblemType status = mcf.run();
+  if (log) {
+    log->phase("LEMON solve");
+    log->status(lemon_status_name<Solver>(status),
+                 status == Solver::OPTIMAL ? SolverLog::Outcome::Optimal
+                                           : SolverLog::Outcome::Degraded);
+  }
+  if (status != Solver::OPTIMAL) {
+    throw std::runtime_error(
+        "min-cost flow solve failed, status=" +
+        std::string(lemon_status_name<Solver>(status)));
   }
   if (flow_adj) {
     for (typename Graph::ArcIt a(graph); a != lemon::INVALID; ++a) {
@@ -111,66 +140,22 @@ template <std::size_t Dim, std::floating_point Scalar,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
-  if (h1.layout().shape() != h2.layout().shape()) {
-    throw std::invalid_argument("histogram shapes do not match");
-  }
+  detail::SolverLog log(
+      "mcf_lemon_l1",
+      fmt::format("Dim={}, algo={}, scale={}", Dim,
+                  algo == McfLemonAlgorithm::NetworkSimplex ? "NetworkSimplex"
+                                                            : "CostScaling",
+                  scale));
+
+  detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
-  const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
 
-  CompScalar t1{0};
-  CompScalar t2{0};
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
-      throw std::invalid_argument("histograms must be nonnegative");
-    }
-    t1 += v1;
-    t2 += v2;
-  }
-
-  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
-      std::abs(t2 - CompScalar{1}) > mass_tol) {
-    throw std::invalid_argument("expected unit-mass histograms");
-  }
-
-  std::vector<int64_t> supply(n_nodes);
-  std::size_t max_abs_idx = 0;
-  int64_t max_abs_val = -1;
-
-  CompScalar cum_target{0};
-  int64_t cum_scaled_prev = 0;
-
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar diff = static_cast<CompScalar>(h1.data()[i]) -
-                            static_cast<CompScalar>(h2.data()[i]);
-    cum_target += diff;
-    const int64_t cum_scaled = std::llround(cum_target * scale);
-    const int64_t s = cum_scaled - cum_scaled_prev;
-    supply[i] = s;
-    cum_scaled_prev = cum_scaled;
-
-    const int64_t abs_s = std::abs(s);
-    if (abs_s > max_abs_val) {
-      max_abs_val = abs_s;
-      max_abs_idx = i;
-    }
-  }
-
-  // Fix rounding drift so total supply sums to exactly 0
-  if (cum_scaled_prev != 0) {
-    supply[max_abs_idx] -= cum_scaled_prev;
-  }
-
-  int64_t total_pos_supply = 0;
-  for (const int64_t s : supply) {
-    if (s > 0) {
-      total_pos_supply += s;
-    }
-  }
-  const int64_t cap_val = std::max<int64_t>(total_pos_supply, 1);
+  const std::vector<int64_t> supply =
+      detail::quantize_net_supply(h1, h2, scale);
+  const int64_t cap_val = detail::total_positive_supply(supply);
+  log.phase("supply setup", fmt::format("nodes={}", n_nodes));
 
   using Graph = lemon::SmartDigraph;
   using Node = Graph::Node;
@@ -189,39 +174,22 @@ template <std::size_t Dim, std::floating_point Scalar,
   Graph::ArcMap<int64_t> cost(graph);
   Graph::NodeMap<int64_t> supply_map(graph);
 
-  std::array<std::ptrdiff_t, Dim> stride{};
-  stride[Dim - 1] = 1;
-  for (std::size_t a = Dim - 1; a-- > 0;) {
-    stride[a] = stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
-  }
+  detail::for_each_grid_arc(layout, [&](std::size_t u, std::size_t v) {
+    const Arc a1 = graph.addArc(nodes[u], nodes[v]);
+    capacity[a1] = cap_val;
+    cost[a1] = 1;
 
-  for (std::size_t a = 0; a < Dim; ++a) {
-    const std::size_t extent = shape[a];
-    if (extent < 2) {
-      continue;
-    }
-    const std::ptrdiff_t st = stride[a];
-    const auto extent_ptrdiff = static_cast<std::ptrdiff_t>(extent);
-
-    for (std::size_t u = 0; u < n_nodes; ++u) {
-      const std::ptrdiff_t u_idx = static_cast<std::ptrdiff_t>(u);
-      if ((u_idx / st) % extent_ptrdiff < extent_ptrdiff - 1) {
-        const std::size_t v = u + static_cast<std::size_t>(st);
-
-        const Arc a1 = graph.addArc(nodes[u], nodes[v]);
-        capacity[a1] = cap_val;
-        cost[a1] = 1;
-
-        const Arc a2 = graph.addArc(nodes[v], nodes[u]);
-        capacity[a2] = cap_val;
-        cost[a2] = 1;
-      }
-    }
-  }
+    const Arc a2 = graph.addArc(nodes[v], nodes[u]);
+    capacity[a2] = cap_val;
+    cost[a2] = 1;
+  });
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     supply_map[nodes[i]] = supply[i];
   }
+
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", n_nodes, graph.arcNum()));
 
   int64_t raw_optimal_cost = 0;
   std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
@@ -230,11 +198,11 @@ template <std::size_t Dim, std::floating_point Scalar,
   if (algo == McfLemonAlgorithm::NetworkSimplex) {
     using Solver = lemon::NetworkSimplex<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   } else {
     using Solver = lemon::CostScaling<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   }
 
   const CompScalar total_cost =
@@ -245,74 +213,15 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->target.clear();
     plan->flow.clear();
 
-    for (std::size_t i = 0; i < n_nodes; ++i) {
-      const CompScalar self_mass =
-          std::min(static_cast<CompScalar>(h1.data()[i]),
-                   static_cast<CompScalar>(h2.data()[i]));
-      if (self_mass > CompScalar{0}) {
-        plan->source.push_back(static_cast<uint32_t>(i));
-        plan->target.push_back(static_cast<uint32_t>(i));
-        plan->flow.push_back(self_mass);
-      }
-    }
+    detail::emit_self_mass(h1, h2, plan);
 
-    std::vector<int64_t> rem_supply = supply;
-    std::vector<std::size_t> ptr(n_nodes, 0);
-
-    for (std::size_t src = 0; src < n_nodes; ++src) {
-      while (rem_supply[src] > 0) {
-        std::vector<std::pair<std::size_t, std::size_t>> path_edges;
-        std::size_t cur = src;
-
-        while (true) {
-          if (rem_supply[cur] < 0 && cur != src) {
-            break;
-          }
-          auto& list = flow_adj[cur];
-          std::size_t p = ptr[cur];
-          while (p < list.size() && list[p].flow <= 0) {
-            ++p;
-          }
-          ptr[cur] = p;
-          if (p >= list.size()) {
-            break;
-          }
-          path_edges.emplace_back(cur, p);
-          cur = static_cast<std::size_t>(list[p].head);
-        }
-
-        if (path_edges.empty()) {
-          break;
-        }
-
-        const std::size_t target = cur;
-        if (rem_supply[target] >= 0) {
-          break;
-        }
-
-        int64_t bottleneck = rem_supply[src];
-        bottleneck = std::min(bottleneck, -rem_supply[target]);
-        for (const auto& [u, p] : path_edges) {
-          bottleneck = std::min(bottleneck, flow_adj[u][p].flow);
-        }
-
-        if (bottleneck <= 0) {
-          break;
-        }
-
-        for (const auto& [u, p] : path_edges) {
-          flow_adj[u][p].flow -= bottleneck;
-        }
-        rem_supply[src] -= bottleneck;
-        rem_supply[target] += bottleneck;
-
-        plan->source.push_back(static_cast<uint32_t>(src));
-        plan->target.push_back(static_cast<uint32_t>(target));
-        plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
-      }
-    }
+    detail::decompose_flows(&flow_adj, supply, n_nodes, scale,
+                            std::identity{}, plan);
+    log.phase("flow decomposition",
+              fmt::format("entries={}", plan->flow.size()));
   }
 
+  log.finish(total_cost);
   return total_cost;
 }
 
@@ -337,38 +246,18 @@ template <std::size_t Dim, std::floating_point Scalar,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
-  if (h1.layout().shape() != h2.layout().shape()) {
-    throw std::invalid_argument("histogram shapes do not match");
-  }
+  detail::SolverLog log(
+      "mcf_dpartion",
+      fmt::format("Dim={}, algo={}, scale={}", Dim,
+                  algo == McfLemonAlgorithm::NetworkSimplex ? "NetworkSimplex"
+                                                            : "CostScaling",
+                  scale));
+
+  detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
   const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
-
-  CompScalar t1{0};
-  CompScalar t2{0};
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
-      throw std::invalid_argument("histograms must be nonnegative");
-    }
-    t1 += v1;
-    t2 += v2;
-  }
-
-  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
-      std::abs(t2 - CompScalar{1}) > mass_tol) {
-    throw std::invalid_argument("expected unit-mass histograms");
-  }
-
-  const char* algo_str =
-      (algo == McfLemonAlgorithm::NetworkSimplex) ? "NetworkSimplex"
-                                                   : "CostScaling";
-  spdlog::info("Starting dpartion solver (Dim={}, algo={})...", Dim, algo_str);
-
-  const Timer total_timer;
-  Timer phase_timer;
 
   const std::size_t total_nodes = (Dim + 1) * n_nodes;
   const std::size_t layer_dim_offset = Dim * n_nodes;
@@ -380,10 +269,8 @@ template <std::size_t Dim, std::floating_point Scalar,
   constexpr bool do_extract_self_mass =
       detail::should_extract_self_mass_v<CostFn>;
 
-  CompScalar cum_target1{0};
-  int64_t cum_scaled_prev1 = 0;
-  CompScalar cum_target2{0};
-  int64_t cum_scaled_prev2 = 0;
+  detail::CumulativeQuantizer<CompScalar> quantizer1(scale);
+  detail::CumulativeQuantizer<CompScalar> quantizer2(scale);
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
     const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
@@ -391,15 +278,8 @@ template <std::size_t Dim, std::floating_point Scalar,
     const CompScalar self_mass =
         do_extract_self_mass ? std::min(v1, v2) : CompScalar{0};
 
-    cum_target1 += v1 - self_mass;
-    const int64_t cum_scaled1 = std::llround(cum_target1 * scale);
-    const int64_t s1 = cum_scaled1 - cum_scaled_prev1;
-    cum_scaled_prev1 = cum_scaled1;
-
-    cum_target2 += v2 - self_mass;
-    const int64_t cum_scaled2 = std::llround(cum_target2 * scale);
-    const int64_t s2 = -(cum_scaled2 - cum_scaled_prev2);
-    cum_scaled_prev2 = cum_scaled2;
+    const int64_t s1 = quantizer1.push(v1 - self_mass);
+    const int64_t s2 = -quantizer2.push(v2 - self_mass);
 
     supply[i] = s1;
     const int64_t abs_s1 = std::abs(s1);
@@ -416,22 +296,20 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
 
-  const int64_t total_supply_sum = cum_scaled_prev1 - cum_scaled_prev2;
+  // Drift is charged to the largest-magnitude supply, tracked above across
+  // both layers; detail::absorb_quantization_drift is not used here because a
+  // linear scan of `supply` would visit the two layers in a different order
+  // and so break ties differently.
+  const int64_t total_supply_sum =
+      quantizer1.scaled_total() - quantizer2.scaled_total();
   if (total_supply_sum != 0) {
     supply[max_abs_idx] -= total_supply_sum;
   }
 
-  int64_t total_pos_supply = 0;
-  for (const int64_t s : supply) {
-    if (s > 0) {
-      total_pos_supply += s;
-    }
-  }
-  const int64_t cap_val = std::max<int64_t>(total_pos_supply, 1);
+  const int64_t cap_val = detail::total_positive_supply(supply);
 
-  spdlog::info("dpartion supply setup took {:.3f} ms",
-               phase_timer.elapsed_milliseconds());
-  phase_timer.reset();
+  log.phase("supply setup",
+            fmt::format("bins={}, layered nodes={}", n_nodes, total_nodes));
 
   using Graph = lemon::SmartDigraph;
   using Node = Graph::Node;
@@ -456,29 +334,23 @@ template <std::size_t Dim, std::floating_point Scalar,
   Graph::ArcMap<int64_t> cost(graph);
   Graph::NodeMap<int64_t> supply_map(graph);
 
-  std::array<std::ptrdiff_t, Dim> stride{};
-  stride[Dim - 1] = 1;
-  for (std::size_t a = Dim - 1; a-- > 0;) {
-    stride[a] = stride[a + 1] * static_cast<std::ptrdiff_t>(shape[a + 1]);
-  }
+  const auto stride = detail::compute_grid_strides<Dim>(shape);
 
   for (std::size_t k = 0; k < Dim; ++k) {
     const std::size_t extent_k = shape[k];
-    const std::ptrdiff_t st_k = stride[k];
+    const std::size_t st_k = stride[k];
     const std::size_t layer_src_offset = k * n_nodes;
     const std::size_t layer_dst_offset = (k + 1) * n_nodes;
 
     for (std::size_t base_u = 0; base_u < n_nodes; ++base_u) {
-      if ((static_cast<std::ptrdiff_t>(base_u) / st_k) %
-              static_cast<std::ptrdiff_t>(extent_k) !=
-          0) {
+      if ((base_u / st_k) % extent_k != 0) {
         continue;
       }
       for (std::size_t a_k = 0; a_k < extent_k; ++a_k) {
-        const std::size_t u = base_u + (a_k * static_cast<std::size_t>(st_k));
+        const std::size_t u = base_u + (a_k * st_k);
         const Node src = nodes[layer_src_offset + u];
         for (std::size_t b_k = 0; b_k < extent_k; ++b_k) {
-          const std::size_t v = base_u + (b_k * static_cast<std::size_t>(st_k));
+          const std::size_t v = base_u + (b_k * st_k);
           const Node dst = nodes[layer_dst_offset + v];
           const Arc arc = graph.addArc(src, dst);
           capacity[arc] = cap_val;
@@ -494,9 +366,8 @@ template <std::size_t Dim, std::floating_point Scalar,
     supply_map[nodes[i]] = supply[i];
   }
 
-  spdlog::info("dpartion graph construction took {:.3f} ms (nodes={}, arcs={})",
-               phase_timer.elapsed_milliseconds(), total_nodes, expected_arcs);
-  phase_timer.reset();
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", total_nodes, expected_arcs));
 
   int64_t raw_optimal_cost = 0;
   std::vector<std::vector<detail::FlowEdge>> flow_adj(total_nodes);
@@ -505,98 +376,40 @@ template <std::size_t Dim, std::floating_point Scalar,
   if (algo == McfLemonAlgorithm::NetworkSimplex) {
     using Solver = lemon::NetworkSimplex<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   } else {
     using Solver = lemon::CostScaling<Graph, int64_t, int64_t>;
     raw_optimal_cost = detail::run_lemon_mcf<Solver>(
-        graph, capacity, cost, supply_map, flow_adj_ptr);
+        graph, capacity, cost, supply_map, &log, flow_adj_ptr);
   }
 
   const CompScalar total_cost =
       static_cast<CompScalar>(raw_optimal_cost) / scale;
 
-  spdlog::info("dpartion LEMON solve took {:.3f} ms",
-               phase_timer.elapsed_milliseconds());
-
   if (plan) {
-    phase_timer.reset();
     plan->source.clear();
     plan->target.clear();
     plan->flow.clear();
 
     if constexpr (do_extract_self_mass) {
-      for (std::size_t i = 0; i < n_nodes; ++i) {
-        const CompScalar self_mass =
-            std::min(static_cast<CompScalar>(h1.data()[i]),
-                     static_cast<CompScalar>(h2.data()[i]));
-        if (self_mass > CompScalar{0}) {
-          plan->source.push_back(static_cast<uint32_t>(i));
-          plan->target.push_back(static_cast<uint32_t>(i));
-          plan->flow.push_back(self_mass);
-        }
-      }
+      detail::emit_self_mass(h1, h2, plan);
     }
 
-    std::vector<int64_t> rem_supply = supply;
-    std::vector<std::size_t> ptr(total_nodes, 0);
-
-    for (std::size_t src = 0; src < n_nodes; ++src) {
-      while (rem_supply[src] > 0) {
-        std::vector<std::pair<std::size_t, std::size_t>> path_edges;
-        std::size_t cur = src;
-
-        while (cur < layer_dim_offset) {
-          auto& list = flow_adj[cur];
-          std::size_t p = ptr[cur];
-          while (p < list.size() && list[p].flow <= 0) {
-            ++p;
-          }
-          ptr[cur] = p;
-          if (p >= list.size()) {
-            break;
-          }
-          path_edges.emplace_back(cur, p);
-          cur = static_cast<std::size_t>(list[p].head);
-        }
-
-        if (path_edges.size() != Dim || cur < layer_dim_offset) {
-          break;
-        }
-
-        const std::size_t target_node = cur;
-        if (rem_supply[target_node] >= 0) {
-          break;
-        }
-
-        int64_t bottleneck = rem_supply[src];
-        bottleneck = std::min(bottleneck, -rem_supply[target_node]);
-        for (const auto& [u, p] : path_edges) {
-          bottleneck = std::min(bottleneck, flow_adj[u][p].flow);
-        }
-
-        if (bottleneck <= 0) {
-          break;
-        }
-
-        for (const auto& [u, p] : path_edges) {
-          flow_adj[u][p].flow -= bottleneck;
-        }
-        rem_supply[src] -= bottleneck;
-        rem_supply[target_node] += bottleneck;
-
-        const std::size_t dst_bin = target_node - layer_dim_offset;
-        plan->source.push_back(static_cast<uint32_t>(src));
-        plan->target.push_back(static_cast<uint32_t>(dst_bin));
-        plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
-      }
-    }
-    spdlog::info("dpartion plan extraction took {:.3f} ms",
-                 phase_timer.elapsed_milliseconds());
+    // On the layered DAG a path leaves layer 0, crosses Dim arcs and lands on
+    // a sink-layer node; the intermediate layers carry zero supply, so the
+    // generic "walk until the current node has a deficit" rule stops in
+    // exactly the same places the hand-rolled layer test did.
+    detail::decompose_flows(
+        &flow_adj, supply, n_nodes, scale,
+        [layer_dim_offset](std::size_t node) {
+          return node - layer_dim_offset;
+        },
+        plan);
+    log.phase("flow decomposition",
+              fmt::format("entries={}", plan->flow.size()));
   }
 
-  spdlog::info("dpartion total execution took {:.3f} ms",
-               total_timer.elapsed_milliseconds());
-
+  log.finish(total_cost);
   return total_cost;
 }
 

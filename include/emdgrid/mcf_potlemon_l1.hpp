@@ -5,6 +5,8 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
@@ -13,17 +15,31 @@
 #include "emdgrid/detail/potlemon/network_simplex_simple.h"
 #include "emdgrid/detail/potlemon/sparse_bipartitegraph.h"
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/grid_detail.hpp"
+#include "emdgrid/log_detail.hpp"
+#include "emdgrid/mcf_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
 
 namespace detail {
 
-/// Edge in the grid-flow adjacency list used for plan decomposition.
-struct PotlemonFlowEdge {
-  uint32_t head;
-  int64_t flow;
-};
+/// Human-readable name for a potlemon network-simplex exit status.
+template <typename Simplex>
+[[nodiscard]] std::string_view potlemon_status_name(
+    typename Simplex::ProblemType status) {
+  switch (status) {
+    case Simplex::INFEASIBLE:
+      return "INFEASIBLE";
+    case Simplex::OPTIMAL:
+      return "OPTIMAL";
+    case Simplex::UNBOUNDED:
+      return "UNBOUNDED";
+    case Simplex::MAX_ITER_REACHED:
+      return "MAX_ITER_REACHED";
+  }
+  return "UNKNOWN";
+}
 
 }  // namespace detail
 
@@ -56,71 +72,24 @@ template <std::size_t Dim, std::floating_point Scalar,
     CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>,
     uint64_t max_iter = 500000) {
-  if (h1.layout().shape() != h2.layout().shape()) {
-    throw std::invalid_argument("histogram shapes do not match");
-  }
+  detail::SolverLog log(
+      "mcf_potlemon_l1",
+      fmt::format("Dim={}, scale={}, max_iter={}", Dim, scale, max_iter));
+
+  detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
-  const auto& shape = layout.shape();
   const std::size_t n_nodes = layout.node_count();
-
-  CompScalar t1{0};
-  CompScalar t2{0};
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
-      throw std::invalid_argument("histograms must be nonnegative");
-    }
-    t1 += v1;
-    t2 += v2;
-  }
-
-  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
-      std::abs(t2 - CompScalar{1}) > mass_tol) {
-    throw std::invalid_argument("expected unit-mass histograms");
-  }
 
   if (plan) {
     plan->source.clear();
     plan->target.clear();
     plan->flow.clear();
+    detail::emit_self_mass(h1, h2, plan);
   }
 
-  // Integer net supply per node via cumulative rounding (keeps total == 0).
-  std::vector<int64_t> node_supply(n_nodes, 0);
-  CompScalar cum{0};
-  int64_t cum_scaled_prev = 0;
-  int64_t max_abs_supply = -1;
-  std::size_t max_abs_idx = 0;
-
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-
-    if (plan) {
-      const CompScalar self_mass = std::min(v1, v2);
-      if (self_mass > CompScalar{0}) {
-        plan->source.push_back(static_cast<uint32_t>(i));
-        plan->target.push_back(static_cast<uint32_t>(i));
-        plan->flow.push_back(self_mass);
-      }
-    }
-
-    cum += v1 - v2;
-    const int64_t cum_scaled = std::llround(cum * scale);
-    node_supply[i] = cum_scaled - cum_scaled_prev;
-    cum_scaled_prev = cum_scaled;
-    if (std::abs(node_supply[i]) > max_abs_supply) {
-      max_abs_supply = std::abs(node_supply[i]);
-      max_abs_idx = i;
-    }
-  }
-
-  // Correct any residual rounding error.
-  if (cum_scaled_prev != 0) {
-    node_supply[max_abs_idx] -= cum_scaled_prev;
-  }
+  const std::vector<int64_t> node_supply =
+      detail::quantize_net_supply(h1, h2, scale);
 
   bool any_nonzero = false;
   for (std::size_t i = 0; i < n_nodes; ++i) {
@@ -129,7 +98,13 @@ template <std::size_t Dim, std::floating_point Scalar,
       break;
     }
   }
+  log.phase("supply setup", fmt::format("nodes={}", n_nodes));
+
   if (!any_nonzero) {
+    spdlog::info(
+        "mcf_potlemon_l1: histograms are identical after quantization, "
+        "nothing to transport");
+    log.finish(CompScalar{0});
     return static_cast<CompScalar>(0.0);
   }
 
@@ -137,20 +112,10 @@ template <std::size_t Dim, std::floating_point Scalar,
   using Digraph = potlemon::SparseDigraph;
   std::vector<std::pair<int, int>> edges;
 
-  for (std::size_t u = 0; u < n_nodes; ++u) {
-    const auto coords =
-        layout.coordinates(static_cast<std::ptrdiff_t>(u));
-    for (std::size_t axis = 0; axis < Dim; ++axis) {
-      if (coords[axis] + 1 < static_cast<std::ptrdiff_t>(shape[axis])) {
-        auto next_coords = coords;
-        ++next_coords[axis];
-        const std::size_t v =
-            static_cast<std::size_t>(layout.node(next_coords));
-        edges.emplace_back(static_cast<int>(u), static_cast<int>(v));
-        edges.emplace_back(static_cast<int>(v), static_cast<int>(u));
-      }
-    }
-  }
+  detail::for_each_grid_arc(layout, [&](std::size_t u, std::size_t v) {
+    edges.emplace_back(static_cast<int>(u), static_cast<int>(v));
+    edges.emplace_back(static_cast<int>(v), static_cast<int>(u));
+  });
 
   const int64_t total_arcs = static_cast<int64_t>(edges.size());
 
@@ -166,15 +131,26 @@ template <std::size_t Dim, std::floating_point Scalar,
     net.setCost(Digraph::arcFromId(k), 1);
   }
 
+  log.phase("graph construction",
+            fmt::format("nodes={}, arcs={}", n_nodes, total_arcs));
+
   const auto status = net.run();
+  log.phase("network simplex solve");
+  using Outcome = detail::SolverLog::Outcome;
+  log.status(detail::potlemon_status_name<Simplex>(status),
+             status == Simplex::OPTIMAL ? Outcome::Optimal
+                                        : Outcome::Degraded);
   if (status != Simplex::OPTIMAL && status != Simplex::MAX_ITER_REACHED) {
-    throw std::runtime_error("potlemon network simplex solve failed");
+    throw std::runtime_error(
+        "potlemon network simplex solve failed, status=" +
+        std::string(detail::potlemon_status_name<Simplex>(status)));
   }
 
   const int64_t raw_cost = net.totalCost();
   const CompScalar total_cost = static_cast<CompScalar>(raw_cost) / scale;
 
   if (!plan) {
+    log.finish(total_cost);
     return total_cost;
   }
 
@@ -182,7 +158,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   // same path-tracing strategy as mcf_lemon_l1: repeatedly trace from each
   // source along edges with remaining flow to a sink, record the bottleneck,
   // and subtract it from the path.
-  std::vector<std::vector<detail::PotlemonFlowEdge>> flow_adj(n_nodes);
+  std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
   for (int64_t k = 0; k < total_arcs; ++k) {
     const Digraph::Arc a = Digraph::arcFromId(k);
     const int64_t f = net.flow(a);
@@ -193,60 +169,12 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
 
-  std::vector<int64_t> rem_supply = node_supply;
-  std::vector<std::size_t> ptr(n_nodes, 0);
+  detail::decompose_flows(&flow_adj, node_supply, n_nodes, scale,
+                          std::identity{}, plan);
+  log.phase("flow decomposition",
+            fmt::format("entries={}", plan->flow.size()));
 
-  for (std::size_t src = 0; src < n_nodes; ++src) {
-    while (rem_supply[src] > 0) {
-      std::vector<std::pair<std::size_t, std::size_t>> path_edges;
-      std::size_t cur = src;
-
-      while (true) {
-        if (rem_supply[cur] < 0 && cur != src) {
-          break;
-        }
-        auto& list = flow_adj[cur];
-        std::size_t p = ptr[cur];
-        while (p < list.size() && list[p].flow <= 0) {
-          ++p;
-        }
-        ptr[cur] = p;
-        if (p >= list.size()) {
-          break;
-        }
-        path_edges.emplace_back(cur, p);
-        cur = static_cast<std::size_t>(list[p].head);
-      }
-
-      if (path_edges.empty()) {
-        break;
-      }
-      const std::size_t target = cur;
-      if (rem_supply[target] >= 0) {
-        break;
-      }
-
-      int64_t bottleneck = rem_supply[src];
-      bottleneck = std::min(bottleneck, -rem_supply[target]);
-      for (const auto& [u, p] : path_edges) {
-        bottleneck = std::min(bottleneck, flow_adj[u][p].flow);
-      }
-      if (bottleneck <= 0) {
-        break;
-      }
-
-      for (const auto& [u, p] : path_edges) {
-        flow_adj[u][p].flow -= bottleneck;
-      }
-      rem_supply[src] -= bottleneck;
-      rem_supply[target] += bottleneck;
-
-      plan->source.push_back(static_cast<uint32_t>(src));
-      plan->target.push_back(static_cast<uint32_t>(target));
-      plan->flow.push_back(static_cast<CompScalar>(bottleneck) / scale);
-    }
-  }
-
+  log.finish(total_cost);
   return total_cost;
 }
 

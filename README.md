@@ -9,6 +9,25 @@ Fast and exact optimal transport solvers for discrete histograms on regular grid
 - **Selectable Computation Precision**: Every solver is templated on a `CompScalar` computation type (defaulting to `double`) that governs the internal arithmetic, the returned cost and the flows of the returned `SparseTransportPlan<CompScalar>`. Pass `--comp-scalar float` to `emdgrid_example` to compare a single-precision run against the double-precision reference.
 - **Python Bindings**: Pybind11 Python bindings (`pyemdgrid`) with support for retrieving sparse transport plans (`scipy.sparse.coo_matrix`).
 
+## Logging
+Every solver reports its progress through [spdlog](https://github.com/gabime/spdlog) using the same set of stages, so runs can be compared across solvers:
+
+```
+[info] mcf_dpartion: starting (Dim=2, algo=NetworkSimplex, scale=1000000)
+[info] mcf_dpartion: supply setup took 0.766 ms (bins=4, layered nodes=12)
+[info] mcf_dpartion: graph construction took 0.031 ms (nodes=12, arcs=16)
+[info] mcf_dpartion: LEMON solve took 0.031 ms
+[info] mcf_dpartion: solver finished with status OPTIMAL
+[info] mcf_dpartion: flow decomposition took 0.003 ms (entries=2)
+[info] mcf_dpartion: done in 0.865 ms, cost 1
+```
+
+Each stage line reports the time since the previous stage; the final line reports the whole run. The status line carries the backend's own exit code (`OPTIMAL`, `MAX_ITER_REACHED`, `INFEASIBLE`, ...).
+
+**A solver that delivered less than it promised logs its status at `warn` level** — an exhausted iteration cap, or a backend reporting anything but optimality — because such a run still returns a number that looks exactly like a converged one. The heuristics (`greedy_emd_l1_approx`, `knothe_rosenblatt`) stay at `info`: returning an upper bound is their contract, not a failure, and warning on every call would only teach you to ignore the channel.
+
+Set the verbosity with spdlog in the usual way, for example `spdlog::set_level(spdlog::level::warn)` to keep only the status warnings, or `spdlog::level::off` to silence the library.
+
 ## Installation
 `pyemdgrid` can be installed directly with `pip`:
 ```bash

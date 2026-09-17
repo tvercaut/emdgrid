@@ -101,6 +101,14 @@ class LingOkadaSolver {
   // Run network simplex and return the EMD-L1 value.
   CompScalar solve(std::ptrdiff_t root, int max_iter = 500);
 
+  // Whether the last solve() proved optimality before exhausting max_iter.
+  // Reported by the caller through SolverLog, so that this solver's exit
+  // status reads the same way as the min-cost-flow backends'.
+  [[nodiscard]] bool converged() const noexcept { return m_converged; }
+
+  // Pivots performed by the last solve().
+  [[nodiscard]] int pivots() const noexcept { return m_pivots; }
+
   [[nodiscard]] std::vector<EdgeFlow> get_directed_edge_flows() const {
     std::vector<EdgeFlow> flows;
     for (std::size_t e = 0; e < m_n_edges; ++e) {
@@ -126,6 +134,9 @@ class LingOkadaSolver {
   }
 
  private:
+  bool m_converged{false};
+  int m_pivots{0};
+
   void init_bv_tree(std::ptrdiff_t root);
   void update_subtree(std::ptrdiff_t start);
   bool is_optimal();
@@ -437,17 +448,15 @@ void LingOkadaSolver<CompScalar>::pivot() {
 template <std::floating_point CompScalar>
 CompScalar LingOkadaSolver<CompScalar>::solve(std::ptrdiff_t root,
                                               int max_iter) {
-  spdlog::info("Starting network simplex solver (max_iter={})...", max_iter);
   init_bv_tree(root);
   update_subtree(root);
 
-  bool converged = false;
+  m_converged = false;
+  m_pivots = max_iter;
   for (int iter = 0; iter < max_iter; ++iter) {
     if (is_optimal()) {
-      spdlog::info(
-          "Network simplex converged to optimal solution in {} iterations.",
-          iter);
-      converged = true;
+      m_converged = true;
+      m_pivots = iter;
       break;
     }
     find_loop();
@@ -457,12 +466,6 @@ CompScalar LingOkadaSolver<CompScalar>::solve(std::ptrdiff_t root,
     pivot();
     // Only the reattached subtree needs its potentials refreshed.
     update_subtree(enter_child);
-  }
-
-  if (!converged) {
-    spdlog::info(
-        "Network simplex reached maximum iterations ({}) without converging.",
-        max_iter);
   }
 
   return total_flow();
@@ -682,8 +685,8 @@ void greedy_init(const GridDataView<Dim, Scalar>& h1,
     }
   }
 
-  spdlog::info("Initialised greedy basic feasible solution for {} nodes.",
-               n_nodes);
+  spdlog::debug("greedy basic feasible solution initialised for {} nodes",
+                n_nodes);
 }
 
 }  // namespace detail

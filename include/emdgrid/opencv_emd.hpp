@@ -39,6 +39,8 @@
 #include <vector>
 
 #include "emdgrid/emdgrid.hpp"
+#include "emdgrid/grid_detail.hpp"
+#include "emdgrid/log_detail.hpp"
 #include "emdgrid/utils.hpp"
 
 namespace emdgrid {
@@ -175,9 +177,12 @@ struct EmdSolver {
     is_used.assign(static_cast<std::size_t>(max_basic) + 1, 0);
 
     call_russel(s, d);
-    run_simplex();
+    converged = run_simplex();
     return calc_flow();
   }
+
+  // Set by solve(): whether the simplex proved optimality before its cap.
+  bool converged{false};
 
   // -----------------------------------------------------------------------
   // Russell's method: greedy initial basic feasible solution.
@@ -236,14 +241,19 @@ struct EmdSolver {
   // -----------------------------------------------------------------------
   // Main simplex loop.
   // -----------------------------------------------------------------------
-  void run_simplex() {
+  // Returns true if the simplex reached optimality within kMaxIter. The
+  // iteration cap is inherited from the OpenCV original; hitting it still
+  // yields a feasible answer, just not a proven optimum, so the caller has to
+  // be told rather than left to assume.
+  bool run_simplex() {
     for (int iter = 0; iter < kMaxIter; ++iter) {
       find_basic_vars();
       if (!check_optimal()) {
-        break;
+        return true;
       }
       check_new_solution();
     }
+    return false;
   }
 
   // BFS to compute dual variables u[i], v[j].
@@ -502,28 +512,12 @@ template <std::size_t Dim, std::floating_point Scalar, typename CostFn,
     CompScalar mass_tol = default_mass_tolerance<CompScalar>) {
   using Coords = GridLayout<Dim>::Coordinates;
 
-  if (h1.layout().shape() != h2.layout().shape()) {
-    throw std::invalid_argument("histogram shapes do not match");
-  }
+  detail::SolverLog log("opencv_emd", fmt::format("Dim={}", Dim));
+
+  detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
   const auto& layout = h1.layout();
   const std::size_t n_nodes = layout.node_count();
-
-  CompScalar t1{0};
-  CompScalar t2{0};
-  for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-    if (v1 < CompScalar{0} || v2 < CompScalar{0}) {
-      throw std::invalid_argument("histograms must be nonnegative");
-    }
-    t1 += v1;
-    t2 += v2;
-  }
-  if (std::abs(t1 - CompScalar{1}) > mass_tol ||
-      std::abs(t2 - CompScalar{1}) > mass_tol) {
-    throw std::invalid_argument("expected unit-mass histograms");
-  }
 
   if (plan != nullptr) {
     plan->source.clear();
@@ -557,6 +551,8 @@ template <std::size_t Dim, std::floating_point Scalar, typename CostFn,
   }
 
   if (sig1.empty() || sig2.empty()) {
+    spdlog::info("opencv_emd: a histogram has no mass, nothing to transport");
+    log.finish(CompScalar{0});
     return static_cast<CompScalar>(0.0);
   }
 
@@ -572,14 +568,25 @@ template <std::size_t Dim, std::floating_point Scalar, typename CostFn,
     }
   }
 
+  log.phase("signature and cost matrix",
+            fmt::format("sources={}, sinks={}, cost entries={}", n, m,
+                        cost_mat.size()));
+
   detail::EmdSolver solver;
   const float raw = solver.solve(sig1, sig2, cost_mat, idx1, idx2);
+  log.phase("transportation simplex");
+  using Outcome = detail::SolverLog::Outcome;
+  log.status(solver.converged ? "OPTIMAL" : "MAX_ITER_REACHED",
+             solver.converged ? Outcome::Optimal : Outcome::Degraded);
 
   if (plan != nullptr) {
     solver.template extract_plan<CompScalar>(*plan);
+    log.phase("plan extraction", fmt::format("entries={}", plan->flow.size()));
   }
 
-  return static_cast<CompScalar>(raw);
+  const auto total_cost = static_cast<CompScalar>(raw);
+  log.finish(total_cost);
+  return total_cost;
 }
 
 /// Overload with `GroundMetric` enum (L1 or SqEuclidean). See the primary
