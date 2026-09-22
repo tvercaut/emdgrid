@@ -67,7 +67,27 @@ namespace potlemon {
 
 inline constexpr int INVALID_NODE = -1;
 inline constexpr int INVALID_ARC = -1;
+
+/// Tolerance for the zero-supply feasibility check and near-zero-flow
+/// bookkeeping. Matches POT's `_EPSILON` in network_simplex_simple.h.
 inline constexpr double POTLEMON_EPSILON = 1e-8;
+
+/// Tolerance for the entering-arc pivot decision (is a reduced cost negative
+/// enough to pivot on). Matches POT's `EPSILON` (its own machine epsilon,
+/// `std::numeric_limits<double>::epsilon()`) in network_simplex_simple.h.
+///
+/// This must NOT be POTLEMON_EPSILON: the two constants serve different
+/// purposes and POT itself keeps them distinct. The very first vendoring of
+/// this file collapsed them into one, using the far looser 1e-8 for the
+/// pivot decision too. That is normally harmless for small integer-cost
+/// problems, since a reduced cost that is genuinely improving is at least 1,
+/// which safely clears a 1e-8-scaled threshold — but if some node's dual
+/// potential is still carrying residual influence from the initial
+/// big-artificial-cost basis when the pivot search runs (`epsilonBound()`
+/// can then be very large), a 1e-8-scaled threshold stops being negligible
+/// and the solver can report OPTIMAL at a valid but non-optimal vertex,
+/// because a real improving arc's reduced cost no longer clears it.
+inline constexpr double POTLEMON_PIVOT_EPSILON = 2.2204460492503131e-15;
 
 /// Type alias for hash map used in Network Simplex sparse structures.
 template <typename Key, typename Value>
@@ -731,7 +751,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
             _in_arc = e;
           }
         }
-        if (min < -POTLEMON_EPSILON * epsilonBound()) {
+        if (min < -POTLEMON_PIVOT_EPSILON * epsilonBound()) {
           _next_arc = scan_start + block_end;
           if (_next_arc >= _search_arc_num) {
             _next_arc -= _search_arc_num;
@@ -739,7 +759,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           return true;
         }
       }
-      return min < -POTLEMON_EPSILON * epsilonBound();
+      return min < -POTLEMON_PIVOT_EPSILON * epsilonBound();
     }
 
 #ifdef POTLEMON_OPENMP
@@ -800,7 +820,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
                 _in_arc = tdata[static_cast<std::size_t>(tt)].arc_id;
               }
             }
-            if (block_min < -POTLEMON_EPSILON * epsilonBound()) {
+            if (block_min < -POTLEMON_PIVOT_EPSILON * epsilonBound()) {
               found = true;
               _next_arc = scan_start + block_end;
               if (_next_arc >= _search_arc_num) {
@@ -821,7 +841,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
           _in_arc = tdata[static_cast<std::size_t>(t)].arc_id;
         }
       }
-      return min_val < -POTLEMON_EPSILON * epsilonBound();
+      return min_val < -POTLEMON_PIVOT_EPSILON * epsilonBound();
     }
 #endif  // POTLEMON_OPENMP
 
