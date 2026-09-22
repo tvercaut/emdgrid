@@ -206,7 +206,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   const Digraph di(n_src, n_tgt);
 
-  typename Simplex::SimplexOptions options(false);
+  Simplex::SimplexOptions options(false);
   options.cost_storage_mode = Simplex::CostStorageMode::ArtificialArcCosts;
   options.flow_storage_mode = Simplex::FlowStorageMode::SparseArcFlows;
   options.endpoint_storage_mode = Simplex::EndpointStorageMode::ArcEndpoints;

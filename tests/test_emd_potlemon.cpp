@@ -438,9 +438,9 @@ TEST_CASE("emd_potlemon 3D: agrees with emd_lemon on a larger grid") {
   double max_rel_err_sq = 0.0;
   for (unsigned int seed = 1; seed <= 20; ++seed) {
     const std::vector<double> a =
-        emdgrid::generate_random_histogram<double>(n, seed * 13 + 1);
+        emdgrid::generate_random_histogram<double>(n, (seed * 13) + 1);
     const std::vector<double> b =
-        emdgrid::generate_random_histogram<double>(n, seed * 17 + 7000);
+        emdgrid::generate_random_histogram<double>(n, (seed * 17) + 7000);
 
     const emdgrid::GridDataView<3, double> h1(layout, std::span(a));
     const emdgrid::GridDataView<3, double> h2(layout, std::span(b));
@@ -469,9 +469,9 @@ TEST_CASE("emd_potlemon 3D: plan mass is conserved on a larger grid") {
   double max_margin_err = 0.0;
   for (unsigned int seed = 1; seed <= 10; ++seed) {
     const std::vector<double> a =
-        emdgrid::generate_random_histogram<double>(n, seed * 29 + 3);
+        emdgrid::generate_random_histogram<double>(n, (seed * 29) + 3);
     const std::vector<double> b =
-        emdgrid::generate_random_histogram<double>(n, seed * 31 + 9000);
+        emdgrid::generate_random_histogram<double>(n, (seed * 31) + 9000);
 
     const emdgrid::GridDataView<3, double> h1(layout, std::span(a));
     const emdgrid::GridDataView<3, double> h2(layout, std::span(b));
@@ -479,7 +479,8 @@ TEST_CASE("emd_potlemon 3D: plan mass is conserved on a larger grid") {
     emdgrid::SparseTransportPlan<> plan;
     (void)emdgrid::emd_potlemon(h1, h2, kSq, &plan);
 
-    std::vector<double> row_sum(n, 0.0), col_sum(n, 0.0);
+    std::vector<double> row_sum(n, 0.0);
+    std::vector<double> col_sum(n, 0.0);
     double total_flow = 0.0;
     for (std::size_t k = 0; k < plan.flow.size(); ++k) {
       total_flow += plan.flow[k];
