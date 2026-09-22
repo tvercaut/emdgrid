@@ -62,17 +62,23 @@ class CumulativeQuantizer {
 ///
 /// A min-cost flow is infeasible unless supplies balance exactly. Charging the
 /// leftover to the largest entry keeps the relative perturbation smallest.
-/// Does nothing when the supplies already balance.
-inline void absorb_quantization_drift(std::span<int64_t> supply,
-                                      int64_t residual) {
-  if (residual == 0 || supply.empty()) {
+/// Does nothing when the supplies already balance. Used both to fix up
+/// cumulative rounding drift in an integer-quantized supply (`Value=int64_t`)
+/// and, in emd_potlemon, to force an exact zero total on a real-valued one
+/// (`Value=double`) before handing it to a solver whose own `Value` template
+/// parameter need not be an integer type — there it also absorbs any
+/// imbalance left by the caller's mass tolerance being looser than the
+/// solver's own feasibility epsilon.
+template <typename Value>
+void absorb_residual(std::span<Value> supply, Value residual) {
+  if (residual == Value{0} || supply.empty()) {
     return;
   }
 
   std::size_t max_abs_idx = 0;
-  int64_t max_abs_val = -1;
+  Value max_abs_val{-1};
   for (std::size_t i = 0; i < supply.size(); ++i) {
-    const int64_t abs_s = std::abs(supply[i]);
+    const Value abs_s = std::abs(supply[i]);
     if (abs_s > max_abs_val) {
       max_abs_val = abs_s;
       max_abs_idx = i;
@@ -98,7 +104,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     supply[i] = quantizer.push(static_cast<CompScalar>(h1.data()[i]) -
                                static_cast<CompScalar>(h2.data()[i]));
   }
-  absorb_quantization_drift(supply, quantizer.scaled_total());
+  absorb_residual<int64_t>(supply, quantizer.scaled_total());
 
   return supply;
 }
