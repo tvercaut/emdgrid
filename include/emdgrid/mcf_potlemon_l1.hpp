@@ -60,6 +60,15 @@ template <typename Simplex>
 /// (source_bin, target_bin, mass) coupling using the same path-tracing
 /// strategy as mcf_lemon_l1.
 ///
+/// Unlike the OR-Tools and LEMON backends, potlemon's `Value` (flow/supply)
+/// template parameter is not required to be an integer type, so this solver
+/// runs directly on real-valued supplies instead of rounding them onto an
+/// integer lattice first — matching how POT itself instantiates this same
+/// network simplex (`NetworkSimplexSimple<Digraph, double, double>` in
+/// `EMD_wrapper.cpp`). Arc costs stay `int64_t` (they are always the unit
+/// cost `1` on this grid-adjacency formulation), so this only removes the
+/// supply-side rounding; there is no longer a user-facing `scale` parameter.
+///
 /// @tparam Dim        Grid dimensionality (>= 1).
 /// @tparam Scalar     Input histogram scalar type.
 /// @tparam CompScalar Scalar type used for computation (default: double).
@@ -69,12 +78,10 @@ template <std::size_t Dim, std::floating_point Scalar,
 [[nodiscard]] CompScalar mcf_potlemon_l1(
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
-    CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>,
     uint64_t max_iter = 500000) {
-  detail::SolverLog log(
-      "mcf_potlemon_l1",
-      fmt::format("Dim={}, scale={}, max_iter={}", Dim, scale, max_iter));
+  detail::SolverLog log("mcf_potlemon_l1",
+                        fmt::format("Dim={}, max_iter={}", Dim, max_iter));
 
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
@@ -88,12 +95,11 @@ template <std::size_t Dim, std::floating_point Scalar,
     detail::emit_self_mass(h1, h2, plan);
   }
 
-  const std::vector<int64_t> node_supply =
-      detail::quantize_net_supply(h1, h2, scale);
+  const std::vector<double> node_supply = detail::net_supply(h1, h2);
 
   bool any_nonzero = false;
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    if (node_supply[i] != 0) {
+    if (node_supply[i] != 0.0) {
       any_nonzero = true;
       break;
     }
@@ -102,8 +108,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 
   if (!any_nonzero) {
     spdlog::info(
-        "mcf_potlemon_l1: histograms are identical after quantization, "
-        "nothing to transport");
+        "mcf_potlemon_l1: histograms are identical, nothing to transport");
     log.finish(CompScalar{0});
     return static_cast<CompScalar>(0.0);
   }
@@ -122,7 +127,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   Digraph di(static_cast<int>(n_nodes));
   di.buildFromEdges(edges);
 
-  using Simplex = potlemon::NetworkSimplexSimple<Digraph, int64_t, int64_t>;
+  using Simplex = potlemon::NetworkSimplexSimple<Digraph, double, int64_t>;
   Simplex::SimplexOptions options(true);
   Simplex net(di, options, static_cast<int>(n_nodes), total_arcs, max_iter);
   net.supplyMap(node_supply);
@@ -146,8 +151,10 @@ template <std::size_t Dim, std::floating_point Scalar,
         std::string(detail::potlemon_status_name<Simplex>(status)));
   }
 
-  const int64_t raw_cost = net.totalCost();
-  const CompScalar total_cost = static_cast<CompScalar>(raw_cost) / scale;
+  // Asking for the cost as double (rather than the default Cost=int64_t)
+  // keeps the fractional mass carried by each arc instead of truncating it.
+  const CompScalar total_cost =
+      static_cast<CompScalar>(net.template totalCost<double>());
 
   if (!plan) {
     log.finish(total_cost);
@@ -158,18 +165,18 @@ template <std::size_t Dim, std::floating_point Scalar,
   // same path-tracing strategy as mcf_lemon_l1: repeatedly trace from each
   // source along edges with remaining flow to a sink, record the bottleneck,
   // and subtract it from the path.
-  std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
+  std::vector<std::vector<detail::FlowEdge<double>>> flow_adj(n_nodes);
   for (int64_t k = 0; k < total_arcs; ++k) {
     const Digraph::Arc a = Digraph::arcFromId(k);
-    const int64_t f = net.flow(a);
-    if (f > 0) {
+    const double f = net.flow(a);
+    if (f > 0.0) {
       const auto u = static_cast<std::size_t>(di.source(a));
       const auto v = static_cast<uint32_t>(di.target(a));
       flow_adj[u].push_back({v, f});
     }
   }
 
-  detail::decompose_flows(&flow_adj, node_supply, n_nodes, scale,
+  detail::decompose_flows(&flow_adj, node_supply, n_nodes, CompScalar{1},
                           std::identity{}, plan);
   log.phase("flow decomposition",
             fmt::format("entries={}", plan->flow.size()));

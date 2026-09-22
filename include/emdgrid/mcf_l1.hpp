@@ -170,7 +170,7 @@ template <std::size_t Dim, std::floating_point Scalar,
 
     detail::emit_self_mass(h1, h2, plan);
 
-    std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
+    std::vector<std::vector<detail::FlowEdge<>>> flow_adj(n_nodes);
     for (int a = 0; a < mcf.NumArcs(); ++a) {
       const int64_t f = mcf.Flow(a);
       if (f > 0) {

@@ -152,4 +152,67 @@ TEST_CASE("mcf_potlemon_l1 2D: unnormalized mass throws") {
                   std::invalid_argument);
 }
 
+TEST_CASE("mcf_potlemon_l1 3D: matches mcf_lemon_l1 on a larger grid") {
+  const emdgrid::GridLayout<3> layout({10, 10, 10});
+  const std::size_t n = layout.node_count();
+
+  double max_rel_err = 0.0;
+  for (unsigned int seed = 1; seed <= 10; ++seed) {
+    const std::vector<double> h1_data =
+        emdgrid::generate_random_histogram<double>(n, (seed * 19) + 3);
+    const std::vector<double> h2_data =
+        emdgrid::generate_random_histogram<double>(n, (seed * 23) + 8000);
+
+    const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+    const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+    const double potlemon_dist = emdgrid::mcf_potlemon_l1(h1, h2);
+    const double lemon_dist = emdgrid::mcf_lemon_l1(h1, h2);
+
+    max_rel_err = std::max(
+        max_rel_err, std::abs(potlemon_dist - lemon_dist) / lemon_dist);
+  }
+  MESSAGE("max_rel_err=", max_rel_err);
+  CHECK(max_rel_err < 1e-4);
+}
+
+TEST_CASE("mcf_potlemon_l1 3D: plan mass is conserved on a larger grid") {
+  const emdgrid::GridLayout<3> layout({10, 10, 10});
+  const std::size_t n = layout.node_count();
+
+  double max_flow_err = 0.0;
+  double max_margin_err = 0.0;
+  for (unsigned int seed = 1; seed <= 10; ++seed) {
+    const std::vector<double> h1_data =
+        emdgrid::generate_random_histogram<double>(n, (seed * 29) + 5);
+    const std::vector<double> h2_data =
+        emdgrid::generate_random_histogram<double>(n, (seed * 31) + 9000);
+
+    const emdgrid::GridDataView<3, double> h1(layout, std::span(h1_data));
+    const emdgrid::GridDataView<3, double> h2(layout, std::span(h2_data));
+
+    emdgrid::SparseTransportPlan<> plan;
+    (void)emdgrid::mcf_potlemon_l1(h1, h2, &plan);
+
+    std::vector<double> row_sum(n, 0.0);
+    std::vector<double> col_sum(n, 0.0);
+    double total_flow = 0.0;
+    for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+      total_flow += plan.flow[k];
+      row_sum[plan.source[k]] += plan.flow[k];
+      col_sum[plan.target[k]] += plan.flow[k];
+    }
+    max_flow_err = std::max(max_flow_err, std::abs(total_flow - 1.0));
+    for (std::size_t i = 0; i < n; ++i) {
+      max_margin_err =
+          std::max(max_margin_err, std::abs(row_sum[i] - h1_data[i]));
+      max_margin_err =
+          std::max(max_margin_err, std::abs(col_sum[i] - h2_data[i]));
+    }
+  }
+  MESSAGE("max_flow_err=", max_flow_err, " max_margin_err=", max_margin_err);
+  CHECK(max_flow_err < 1e-6);
+  CHECK(max_margin_err < 1e-6);
+}
+
 TEST_SUITE_END();

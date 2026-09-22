@@ -96,7 +96,7 @@ int64_t run_lemon_mcf(
     typename Graph::template NodeMap<int64_t>& supply,
     SolverLog* log,
     // NOLINTNEXTLINE(readability-non-const-parameter)
-    std::vector<std::vector<FlowEdge>>* flow_adj = nullptr) {
+    std::vector<std::vector<FlowEdge<>>>* flow_adj = nullptr) {
   Solver mcf(graph);
   mcf.upperMap(capacity).costMap(cost).supplyMap(supply);
   const typename Solver::ProblemType status = mcf.run();
@@ -197,7 +197,7 @@ template <std::size_t Dim, std::floating_point Scalar,
             fmt::format("nodes={}, arcs={}", n_nodes, graph.arcNum()));
 
   int64_t raw_optimal_cost = 0;
-  std::vector<std::vector<detail::FlowEdge>> flow_adj(n_nodes);
+  std::vector<std::vector<detail::FlowEdge<>>> flow_adj(n_nodes);
   auto* flow_adj_ptr = plan ? &flow_adj : nullptr;
 
   if (algo == McfLemonAlgorithm::NetworkSimplex) {
@@ -375,7 +375,7 @@ template <std::size_t Dim, std::floating_point Scalar,
             fmt::format("nodes={}, arcs={}", total_nodes, expected_arcs));
 
   int64_t raw_optimal_cost = 0;
-  std::vector<std::vector<detail::FlowEdge>> flow_adj(total_nodes);
+  std::vector<std::vector<detail::FlowEdge<>>> flow_adj(total_nodes);
   auto* flow_adj_ptr = plan ? &flow_adj : nullptr;
 
   if (algo == McfLemonAlgorithm::NetworkSimplex) {

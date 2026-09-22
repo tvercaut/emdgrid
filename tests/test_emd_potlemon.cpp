@@ -129,9 +129,12 @@ TEST_CASE("emd_potlemon 1D: symmetric in its arguments") {
 // ============================================================================
 //  Agreement with the other solvers
 //
-//  emd_potlemon and emd_lemon state the identical quantized problem and differ
-//  only in the backend and in where the costs live, so they are expected to
-//  agree far more tightly than the quantization tolerance.
+//  emd_potlemon runs on potlemon's Value=double network simplex directly
+//  (matching POT's own EMD_wrap_lazy, see emd_potlemon.hpp), while emd_lemon
+//  still quantizes onto an integer lattice. They are independent solves of
+//  the same real-valued problem, not the identical quantized LP, so they are
+//  only expected to agree to ordinary cross-algorithm numerical precision,
+//  not bit-for-bit.
 // ============================================================================
 
 TEST_CASE("emd_potlemon 3D L1: matches emd_lemon and emd_l1") {
@@ -149,7 +152,7 @@ TEST_CASE("emd_potlemon 3D L1: matches emd_lemon and emd_l1") {
   const double potlemon = emdgrid::emd_potlemon(h1, h2, kL1);
 
   CHECK(potlemon ==
-        doctest::Approx(emdgrid::emd_lemon(h1, h2, kL1)).epsilon(1e-9));
+        doctest::Approx(emdgrid::emd_lemon(h1, h2, kL1)).epsilon(1e-4));
   CHECK(potlemon == doctest::Approx(emdgrid::emd_l1(h1, h2)).epsilon(1e-4));
 }
 
@@ -168,7 +171,7 @@ TEST_CASE("emd_potlemon 2D W2^2: matches emd_lemon and mcf_dpartion") {
   const double potlemon = emdgrid::emd_potlemon(h1, h2, kSq);
 
   CHECK(potlemon ==
-        doctest::Approx(emdgrid::emd_lemon(h1, h2, kSq)).epsilon(1e-9));
+        doctest::Approx(emdgrid::emd_lemon(h1, h2, kSq)).epsilon(1e-4));
   CHECK(potlemon == doctest::Approx(emdgrid::mcf_dpartion(
                                         h1, h2, kSq,
                                         emdgrid::McfLemonAlgorithm::
@@ -191,9 +194,9 @@ TEST_CASE("emd_potlemon 3D: agrees with emd_lemon across several seeds") {
 
     CAPTURE(seed);
     CHECK(emdgrid::emd_potlemon(h1, h2, kL1) ==
-          doctest::Approx(emdgrid::emd_lemon(h1, h2, kL1)).epsilon(1e-9));
+          doctest::Approx(emdgrid::emd_lemon(h1, h2, kL1)).epsilon(1e-4));
     CHECK(emdgrid::emd_potlemon(h1, h2, kSq) ==
-          doctest::Approx(emdgrid::emd_lemon(h1, h2, kSq)).epsilon(1e-9));
+          doctest::Approx(emdgrid::emd_lemon(h1, h2, kSq)).epsilon(1e-4));
   }
 }
 
@@ -426,3 +429,73 @@ TEST_CASE("potlemon FullBipartiteDigraph: findArc round-trips endpoints") {
 }
 
 TEST_SUITE_END();
+
+TEST_CASE("emd_potlemon 3D: agrees with emd_lemon on a larger grid") {
+  const emdgrid::GridLayout<3> layout({8, 8, 8});
+  const std::size_t n = layout.node_count();
+
+  double max_rel_err_l1 = 0.0;
+  double max_rel_err_sq = 0.0;
+  for (unsigned int seed = 1; seed <= 20; ++seed) {
+    const std::vector<double> a =
+        emdgrid::generate_random_histogram<double>(n, (seed * 13) + 1);
+    const std::vector<double> b =
+        emdgrid::generate_random_histogram<double>(n, (seed * 17) + 7000);
+
+    const emdgrid::GridDataView<3, double> h1(layout, std::span(a));
+    const emdgrid::GridDataView<3, double> h2(layout, std::span(b));
+
+    const double potlemon_l1 = emdgrid::emd_potlemon(h1, h2, kL1);
+    const double ref_l1 = emdgrid::emd_lemon(h1, h2, kL1);
+    const double potlemon_sq = emdgrid::emd_potlemon(h1, h2, kSq);
+    const double ref_sq = emdgrid::emd_lemon(h1, h2, kSq);
+
+    max_rel_err_l1 =
+        std::max(max_rel_err_l1, std::abs(potlemon_l1 - ref_l1) / ref_l1);
+    max_rel_err_sq =
+        std::max(max_rel_err_sq, std::abs(potlemon_sq - ref_sq) / ref_sq);
+  }
+  MESSAGE("max_rel_err_l1=", max_rel_err_l1, " max_rel_err_sq=",
+          max_rel_err_sq);
+  CHECK(max_rel_err_l1 < 1e-4);
+  CHECK(max_rel_err_sq < 1e-4);
+}
+
+TEST_CASE("emd_potlemon 3D: plan mass is conserved on a larger grid") {
+  const emdgrid::GridLayout<3> layout({8, 8, 8});
+  const std::size_t n = layout.node_count();
+
+  double max_flow_err = 0.0;
+  double max_margin_err = 0.0;
+  for (unsigned int seed = 1; seed <= 10; ++seed) {
+    const std::vector<double> a =
+        emdgrid::generate_random_histogram<double>(n, (seed * 29) + 3);
+    const std::vector<double> b =
+        emdgrid::generate_random_histogram<double>(n, (seed * 31) + 9000);
+
+    const emdgrid::GridDataView<3, double> h1(layout, std::span(a));
+    const emdgrid::GridDataView<3, double> h2(layout, std::span(b));
+
+    emdgrid::SparseTransportPlan<> plan;
+    (void)emdgrid::emd_potlemon(h1, h2, kSq, &plan);
+
+    std::vector<double> row_sum(n, 0.0);
+    std::vector<double> col_sum(n, 0.0);
+    double total_flow = 0.0;
+    for (std::size_t k = 0; k < plan.flow.size(); ++k) {
+      total_flow += plan.flow[k];
+      row_sum[plan.source[k]] += plan.flow[k];
+      col_sum[plan.target[k]] += plan.flow[k];
+    }
+    max_flow_err = std::max(max_flow_err, std::abs(total_flow - 1.0));
+    for (std::size_t i = 0; i < n; ++i) {
+      max_margin_err =
+          std::max(max_margin_err, std::abs(row_sum[i] - a[i]));
+      max_margin_err =
+          std::max(max_margin_err, std::abs(col_sum[i] - b[i]));
+    }
+  }
+  MESSAGE("max_flow_err=", max_flow_err, " max_margin_err=", max_margin_err);
+  CHECK(max_flow_err < 1e-6);
+  CHECK(max_margin_err < 1e-6);
+}

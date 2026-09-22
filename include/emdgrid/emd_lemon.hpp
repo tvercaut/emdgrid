@@ -207,7 +207,7 @@ template <std::size_t Dim, std::floating_point Scalar,
   // nonnegative: that entry is at least the average, and the drift is at most
   // one quantum. When the totals are both zero the drift is zero too, so the
   // all-zero case is left untouched.
-  detail::absorb_quantization_drift(
+  detail::absorb_residual<int64_t>(
       supply1, quantizer1.scaled_total() - quantizer2.scaled_total());
 
   if (plan != nullptr && do_extract_self_mass) {

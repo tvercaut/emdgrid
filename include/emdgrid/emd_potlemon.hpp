@@ -76,6 +76,15 @@ constexpr int lazy_metric_cityblock = 2;
 /// `GroundMetric::SqEuclidean` does not, since it fails the triangle
 /// inequality.
 ///
+/// **Supplies.** Unlike LEMON, potlemon's `Value` (flow/supply) template
+/// parameter need not be an integer type, so the supplies here are the raw
+/// per-bin residuals rather than a quantized integer lattice — matching how
+/// POT itself instantiates this same network simplex
+/// (`NetworkSimplexSimple<Digraph, double, double>` in `EMD_wrapper.cpp`),
+/// down to filtering by strict positivity and running the pivot loop on the
+/// raw, not-quite-exactly-balanced supply; the solver's own feasibility
+/// tolerance (`NetworkSimplexSimple::supplyEpsilon`) absorbs the residual.
+///
 /// @tparam Dim        Grid dimensionality (>= 1).
 /// @tparam Scalar     Input histogram scalar type.
 /// @tparam CompScalar Scalar type used for computation (default: double).
@@ -84,7 +93,6 @@ constexpr int lazy_metric_cityblock = 2;
 /// @param h2       Target histogram, unit mass.
 /// @param metric   Ground metric, L1 or squared Euclidean.
 /// @param plan     Optional sparse transport plan output.
-/// @param scale    Quantization scale for the supplies.
 /// @param mass_tol Tolerance on each histogram's deviation from unit mass.
 /// @param max_iter Iteration cap; reaching it logs a warning and returns a
 ///                 feasible but unproven cost.
@@ -95,15 +103,13 @@ template <std::size_t Dim, std::floating_point Scalar,
     const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2,
     GroundMetric metric = GroundMetric::L1,
     SparseTransportPlanPtr<CompScalar> plan = nullptr,
-    CompScalar scale = static_cast<CompScalar>(1e6),
     CompScalar mass_tol = default_mass_tolerance<CompScalar>,
     uint64_t max_iter = 500000) {
   const bool is_l1 = (metric == GroundMetric::L1);
 
   detail::SolverLog log(
-      "emd_potlemon",
-      fmt::format("Dim={}, metric={}, scale={}, max_iter={}", Dim,
-                  is_l1 ? "L1" : "SqEuclidean", scale, max_iter));
+      "emd_potlemon", fmt::format("Dim={}, metric={}, max_iter={}", Dim,
+                                  is_l1 ? "L1" : "SqEuclidean", max_iter));
 
   detail::validate_unit_mass_pair(h1, h2, mass_tol);
 
@@ -116,23 +122,26 @@ template <std::size_t Dim, std::floating_point Scalar,
     plan->flow.clear();
   }
 
-  // Quantize each side's residual separately, exactly as emd_lemon does, so
+  // Compute each side's residual separately, exactly as emd_lemon does, so
   // that the source supplies stay nonnegative and the target demands too.
-  std::vector<int64_t> supply1(n_nodes);
-  std::vector<int64_t> supply2(n_nodes);
-  detail::CumulativeQuantizer<CompScalar> quantizer1(scale);
-  detail::CumulativeQuantizer<CompScalar> quantizer2(scale);
+  // Unlike emd_lemon (LEMON's Value type must be integer), potlemon's Value
+  // can be real-valued directly, so there is no rounding step here.
+  std::vector<double> supply1(n_nodes);
+  std::vector<double> supply2(n_nodes);
+  double total1{0};
+  double total2{0};
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    const CompScalar v1 = static_cast<CompScalar>(h1.data()[i]);
-    const CompScalar v2 = static_cast<CompScalar>(h2.data()[i]);
-    const CompScalar self_mass = is_l1 ? std::min(v1, v2) : CompScalar{0};
-    supply1[i] = quantizer1.push(v1 - self_mass);
-    supply2[i] = quantizer2.push(v2 - self_mass);
+    const double v1 = static_cast<double>(h1.data()[i]);
+    const double v2 = static_cast<double>(h2.data()[i]);
+    const double self_mass = is_l1 ? std::min(v1, v2) : 0.0;
+    supply1[i] = v1 - self_mass;
+    supply2[i] = v2 - self_mass;
+    total1 += supply1[i];
+    total2 += supply2[i];
   }
 
-  detail::absorb_quantization_drift(
-      supply1, quantizer1.scaled_total() - quantizer2.scaled_total());
+  detail::absorb_residual<double>(supply1, total1 - total2);
 
   if (plan != nullptr && is_l1) {
     detail::emit_self_mass(h1, h2, plan);
@@ -145,10 +154,10 @@ template <std::size_t Dim, std::floating_point Scalar,
   std::vector<uint32_t> bin_b;
   std::vector<double> coords_a;
   std::vector<double> coords_b;
-  std::vector<int64_t> supply;
+  std::vector<double> supply;
 
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    if (supply1[i] == 0) {
+    if (supply1[i] == 0.0) {
       continue;
     }
     bin_a.push_back(static_cast<uint32_t>(i));
@@ -158,7 +167,7 @@ template <std::size_t Dim, std::floating_point Scalar,
     }
   }
   for (std::size_t i = 0; i < n_nodes; ++i) {
-    if (supply2[i] == 0) {
+    if (supply2[i] == 0.0) {
       continue;
     }
     bin_b.push_back(static_cast<uint32_t>(i));
@@ -184,15 +193,13 @@ template <std::size_t Dim, std::floating_point Scalar,
                         n_tgt));
 
   if (n_src == 0 || n_tgt == 0) {
-    spdlog::info(
-        "emd_potlemon: histograms agree after quantization, nothing to "
-        "transport");
+    spdlog::info("emd_potlemon: histograms agree, nothing to transport");
     log.finish(CompScalar{0});
     return static_cast<CompScalar>(0.0);
   }
 
   using Digraph = potlemon::FullBipartiteDigraph;
-  using Simplex = potlemon::NetworkSimplexSimple<Digraph, int64_t, int64_t>;
+  using Simplex = potlemon::NetworkSimplexSimple<Digraph, double, int64_t>;
 
   const int64_t total_arcs =
       static_cast<int64_t>(n_src) * static_cast<int64_t>(n_tgt);
@@ -232,9 +239,9 @@ template <std::size_t Dim, std::floating_point Scalar,
   // work too, but under SparseArcFlows it walks all n·m arc ids and hashes
   // each one; the map holds only the basis, so this is O(n + m) instead.
   // POT's own extraction takes the O(n·m) route.
-  int64_t raw_cost = 0;
+  double raw_cost{0};
   for (const auto& [arc_id, arc_flow] : net._real_flow) {
-    if (arc_flow <= 0) {
+    if (arc_flow <= 0.0) {
       continue;
     }
     // The solver numbers its arcs in reverse, so undo that to recover the
@@ -243,16 +250,16 @@ template <std::size_t Dim, std::floating_point Scalar,
     const auto i = static_cast<int>(graph_arc / n_tgt);
     const auto j = static_cast<int>(graph_arc % n_tgt);
 
-    raw_cost += arc_flow * net.computeLazyCost(i, j);
+    raw_cost += arc_flow * static_cast<double>(net.computeLazyCost(i, j));
 
     if (plan != nullptr) {
       plan->source.push_back(bin_a[static_cast<std::size_t>(i)]);
       plan->target.push_back(bin_b[static_cast<std::size_t>(j)]);
-      plan->flow.push_back(static_cast<CompScalar>(arc_flow) / scale);
+      plan->flow.push_back(static_cast<CompScalar>(arc_flow));
     }
   }
 
-  const CompScalar total_cost = static_cast<CompScalar>(raw_cost) / scale;
+  const CompScalar total_cost = static_cast<CompScalar>(raw_cost);
 
   if (plan != nullptr) {
     log.phase("plan extraction",
