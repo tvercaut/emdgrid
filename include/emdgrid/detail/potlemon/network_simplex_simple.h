@@ -69,7 +69,17 @@ inline constexpr int INVALID_NODE = -1;
 inline constexpr int INVALID_ARC = -1;
 
 /// Tolerance for the zero-supply feasibility check and near-zero-flow
-/// bookkeeping. Matches POT's `_EPSILON` in network_simplex_simple.h.
+/// bookkeeping (an artificial arc left carrying a whisker of flow once the
+/// pivot loop is done). Matches POT's `_EPSILON` in network_simplex_simple.h,
+/// which POT introduced specifically to fix reporting INFEASIBLE on entirely
+/// valid `float64` inputs (github.com/PythonOT/POT/issues/126): a user's
+/// `torch.softmax`-generated distributions left a rounding-noise residual on
+/// an artificial arc that an exact `!= 0` check rejected. That is a real,
+/// user-hit failure mode for floating supply, not a hypothetical one, so
+/// this tolerance stays a fixed absolute value (not scaled by
+/// `Value`'s precision the way `pivotEpsilon` scales by `Cost`'s): 1e-8 is
+/// POT's deliberately loose bound on real-world input imprecision, unrelated
+/// to any type's machine epsilon.
 ///
 /// This must NOT also be used for the entering-arc pivot decision: that
 /// needs a tolerance scaled to the `Cost` type's own precision
@@ -176,6 +186,13 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
  public:
   typedef V Value;
   typedef C Cost;
+
+  // Absolute tolerance for the zero-supply feasibility check and near-zero-
+  // flow bookkeeping. See the comment on POTLEMON_EPSILON, which this
+  // wraps, for why this stays a fixed bound rather than being scaled by
+  // Value's own precision the way BlockSearchPivotRule::pivotEpsilon scales
+  // by Cost's.
+  static constexpr double supplyEpsilon() { return POTLEMON_EPSILON; }
 
   enum class CostMode : std::uint8_t { StoredArray, DenseMatrix, LazyGeometry };
 
@@ -702,15 +719,25 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     }
 
     // Relative tolerance for "is this reduced cost negative enough to pivot
-    // on", scaled against epsilonBound() at each call site. Ten times
-    // std::numeric_limits<Cost>::epsilon() matches POT's own fixed constant
-    // for a floating Cost (that 10x safety margin over one ULP is POT's,
-    // empirically covering the rounding of a few combined operations), while
-    // for an exact/integer Cost, epsilon() is 0 by the standard, so this
-    // collapses to a plain `< 0` comparison — the exact behaviour of
-    // unmodified LEMON, with no fudge factor at all where none is needed.
+    // on", scaled against epsilonBound() at each call site.
+    //
+    // std::numeric_limits<Cost>::epsilon() matches Nicolas Bonneel's own
+    // upstream (github.com/nbonneel/network_simplex), and specifically the
+    // 2018 rewrite ("updated to a newer version of the algo by LEMON") that
+    // this file's provenance already claims lineage from: his current code
+    // uses this exact expression. His 2015 code (which is what POT actually
+    // forked, and POT's own network_simplex_simple.h still carries today)
+    // instead hardcoded 2.2204460492503131e-15 -- ten times
+    // std::numeric_limits<double>::epsilon() -- for every Cost type. That
+    // reads like an inherited literal from before Bonneel's own later
+    // cleanup, not a deliberately validated choice: nothing in either
+    // history documents a reason for the 10x factor, and Bonneel's own more
+    // recent code drops it. For an exact/integer Cost, epsilon() is 0 by the
+    // standard, so this collapses to a plain `< 0` comparison regardless --
+    // the exact behaviour of unmodified LEMON, with no fudge factor at all
+    // where none is needed.
     static constexpr double pivotEpsilon() {
-      return 10.0 * static_cast<double>(std::numeric_limits<Cost>::epsilon());
+      return static_cast<double>(std::numeric_limits<Cost>::epsilon());
     }
 
     // Reduced cost of arc ae. kDirect=true uses direct array member access,
@@ -1214,7 +1241,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     for (int i = 0; i != _node_num; ++i) {
       _sum_supply += _supply[i];
     }
-    if (std::abs(static_cast<double>(_sum_supply)) > POTLEMON_EPSILON) {
+    if (std::abs(static_cast<double>(_sum_supply)) > supplyEpsilon()) {
       return false;
     }
     _sum_supply = 0;
@@ -1589,7 +1616,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     for (int i = 0; i != _node_num; ++i) {
       _sum_supply += _supply[i];
     }
-    if (std::abs(static_cast<double>(_sum_supply)) > POTLEMON_EPSILON) {
+    if (std::abs(static_cast<double>(_sum_supply)) > supplyEpsilon()) {
       return false;
     }
 
@@ -2113,7 +2140,7 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
     if (retVal == OPTIMAL) {
       for (ArcsType e = _search_arc_num; e != _all_arc_num; ++e) {
         if (arcFlow(e) != 0) {
-          if (std::abs(static_cast<double>(arcFlow(e))) > POTLEMON_EPSILON) {
+          if (std::abs(static_cast<double>(arcFlow(e))) > supplyEpsilon()) {
             return INFEASIBLE;
           }
           setArcFlow(e, 0);
