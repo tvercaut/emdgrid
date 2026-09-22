@@ -68,34 +68,6 @@ namespace potlemon {
 inline constexpr int INVALID_NODE = -1;
 inline constexpr int INVALID_ARC = -1;
 
-/// Tolerance for the zero-supply feasibility check and near-zero-flow
-/// bookkeeping (an artificial arc left carrying a whisker of flow once the
-/// pivot loop is done). Matches POT's `_EPSILON` in network_simplex_simple.h,
-/// which POT introduced specifically to fix reporting INFEASIBLE on entirely
-/// valid `float64` inputs (github.com/PythonOT/POT/issues/126): a user's
-/// `torch.softmax`-generated distributions left a rounding-noise residual on
-/// an artificial arc that an exact `!= 0` check rejected. That is a real,
-/// user-hit failure mode for floating supply, not a hypothetical one, so
-/// this tolerance stays a fixed absolute value (not scaled by
-/// `Value`'s precision the way `pivotEpsilon` scales by `Cost`'s): 1e-8 is
-/// POT's deliberately loose bound on real-world input imprecision, unrelated
-/// to any type's machine epsilon.
-///
-/// This must NOT also be used for the entering-arc pivot decision: that
-/// needs a tolerance scaled to the `Cost` type's own precision
-/// (`BlockSearchPivotRule::pivotEpsilon`), not this feasibility tolerance.
-/// The very first vendoring of this file collapsed the two into one, using
-/// this far looser 1e-8 for the pivot decision too. That is normally
-/// harmless for small integer-cost problems, since a reduced cost that is
-/// genuinely improving is at least 1, which safely clears a 1e-8-scaled
-/// threshold — but if some node's dual potential is still carrying residual
-/// influence from the initial big-artificial-cost basis when the pivot
-/// search runs (`epsilonBound()` can then be very large), a 1e-8-scaled
-/// threshold stops being negligible and the solver can report OPTIMAL at a
-/// valid but non-optimal vertex, because a real improving arc's reduced
-/// cost no longer clears it.
-inline constexpr double POTLEMON_EPSILON = 1e-8;
-
 /// Type alias for hash map used in Network Simplex sparse structures.
 template <typename Key, typename Value>
 using HashMap = std::unordered_map<Key, Value>;
@@ -188,11 +160,26 @@ class NetworkSimplexSimple {  // NOLINT(whitespace/indent_namespace)
   typedef C Cost;
 
   // Absolute tolerance for the zero-supply feasibility check and near-zero-
-  // flow bookkeeping. See the comment on POTLEMON_EPSILON, which this
-  // wraps, for why this stays a fixed bound rather than being scaled by
-  // Value's own precision the way BlockSearchPivotRule::pivotEpsilon scales
-  // by Cost's.
-  static constexpr double supplyEpsilon() { return POTLEMON_EPSILON; }
+  // flow bookkeeping (an artificial arc left carrying a whisker of flow once
+  // the pivot loop is done). Matches POT's `_EPSILON` in
+  // network_simplex_simple.h, which POT introduced specifically to fix
+  // reporting INFEASIBLE on entirely valid float64 inputs
+  // (github.com/PythonOT/POT/issues/126): a user's torch.softmax-generated
+  // distributions left a rounding-noise residual on an artificial arc that
+  // an exact `!= 0` check rejected. That is a real, user-hit failure mode
+  // for floating supply, not a hypothetical one, so this stays a fixed
+  // absolute value rather than being scaled by Value's own precision the
+  // way BlockSearchPivotRule::pivotEpsilon scales by Cost's: 1e-8 is POT's
+  // deliberately loose bound on real-world input imprecision, unrelated to
+  // any type's machine epsilon. Must NOT be reused for the entering-arc
+  // pivot decision -- that is pivotEpsilon's job, not this one's; the very
+  // first vendoring of this file collapsed the two into one, which was
+  // normally harmless for small integer-cost problems (a genuinely
+  // improving reduced cost is at least 1, well clear of a 1e-8-scaled
+  // threshold) but could report OPTIMAL at a non-optimal vertex once a
+  // node's dual potential carried enough residual big-artificial-cost
+  // influence to make epsilonBound() large.
+  static constexpr double supplyEpsilon() { return 1e-8; }
 
   enum class CostMode : std::uint8_t { StoredArray, DenseMatrix, LazyGeometry };
 
