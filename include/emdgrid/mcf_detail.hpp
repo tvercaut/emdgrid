@@ -22,10 +22,13 @@ namespace detail {
 ///
 /// Every min-cost-flow backend reports its solution as arc flows; the solvers
 /// bucket those into a per-tail adjacency list of these edges before
-/// decomposing them into a transport plan.
+/// decomposing them into a transport plan. `Value` is `int64_t` for backends
+/// that require integer flow (OR-Tools, LEMON) and `double` for a solver
+/// that runs on real-valued supplies directly (potlemon).
+template <typename Value = int64_t>
 struct FlowEdge {
   uint32_t head;
-  int64_t flow;
+  Value flow;
 };
 
 /// Turns a running real-valued total into integer increments.
@@ -109,6 +112,30 @@ template <std::size_t Dim, std::floating_point Scalar,
   return supply;
 }
 
+/// Computes the per-bin net supply `h1 - h2` directly in `double`, with no
+/// rounding to an integer lattice.
+///
+/// Unlike `quantize_net_supply`, this is for solvers (potlemon) whose `Value`
+/// type can be `double` itself. The residual is still absorbed into the
+/// largest-magnitude bin, because `validate_unit_mass_pair`'s `mass_tol` is
+/// normally looser than the solver's own zero-supply feasibility check.
+template <std::size_t Dim, std::floating_point Scalar>
+[[nodiscard]] std::vector<double> net_supply(
+    const GridDataView<Dim, Scalar>& h1, const GridDataView<Dim, Scalar>& h2) {
+  const std::size_t n_nodes = h1.layout().node_count();
+
+  std::vector<double> supply(n_nodes);
+  double total{0};
+  for (std::size_t i = 0; i < n_nodes; ++i) {
+    supply[i] = static_cast<double>(h1.data()[i]) -
+                static_cast<double>(h2.data()[i]);
+    total += supply[i];
+  }
+  absorb_residual<double>(supply, total);
+
+  return supply;
+}
+
 /// Sum of the positive supplies, clamped to at least one.
 ///
 /// Usable as a uniform per-arc capacity: no arc can ever carry more than the
@@ -140,25 +167,42 @@ template <std::size_t Dim, std::floating_point Scalar,
 /// maps the node a path ended on to the bin reported in the plan: solvers on
 /// the grid graph pass std::identity, layered solvers subtract their sink
 /// layer's offset.
-template <std::floating_point CompScalar, class BinOf>
-void decompose_flows(std::vector<std::vector<FlowEdge>>* flow_adj,
-                     std::vector<int64_t> rem_supply, std::size_t n_sources,
+///
+/// `Value` is the flow/supply representation the backend solved in: `int64_t`
+/// for a quantized-integer backend (pass the quantization `scale` to convert
+/// the bottleneck back to `CompScalar`), or `double` itself for a solver that
+/// ran on real-valued supplies directly (pass `scale = CompScalar{1}`).
+///
+/// Every comparison against zero below is instead against `eps =
+/// static_cast<Value>(1e-10)`. For an exact/integer `Value` that truncates to
+/// exactly `0`, so nothing changes there. For a real-valued `Value`, without
+/// it a residual that should be exactly zero after many prior subtractions
+/// can land a few ULPs to one side, and an exact `> 0`/`<= 0` comparison then
+/// stalls the walk on a pass-through node before it reaches a genuine
+/// deficit — silently dropping that source's remaining surplus from the
+/// plan instead of moving it. Matches the tolerance POT's own
+/// `decompose_grid_flows` (`EMD_wrapper.cpp`, from the `emd_grid_l1` PR,
+/// https://github.com/PythonOT/POT/pull/863) uses for the identical purpose.
+template <typename Value, std::floating_point CompScalar, class BinOf>
+void decompose_flows(std::vector<std::vector<FlowEdge<Value>>>* flow_adj,
+                     std::vector<Value> rem_supply, std::size_t n_sources,
                      CompScalar scale, BinOf&& target_bin,
                      SparseTransportPlan<CompScalar>* plan) {
+  const Value eps = static_cast<Value>(1e-10);
   std::vector<std::size_t> ptr(flow_adj->size(), 0);
 
   for (std::size_t src = 0; src < n_sources; ++src) {
-    while (rem_supply[src] > 0) {
+    while (rem_supply[src] > eps) {
       std::vector<std::pair<std::size_t, std::size_t>> path_edges;
       std::size_t cur = src;
 
       while (true) {
-        if (rem_supply[cur] < 0 && cur != src) {
+        if (rem_supply[cur] < -eps && cur != src) {
           break;
         }
         auto& list = (*flow_adj)[cur];
         std::size_t p = ptr[cur];
-        while (p < list.size() && list[p].flow <= 0) {
+        while (p < list.size() && list[p].flow <= eps) {
           ++p;
         }
         ptr[cur] = p;
@@ -174,17 +218,17 @@ void decompose_flows(std::vector<std::vector<FlowEdge>>* flow_adj,
       }
 
       const std::size_t target = cur;
-      if (rem_supply[target] >= 0) {
+      if (rem_supply[target] >= -eps) {
         break;
       }
 
-      int64_t bottleneck = rem_supply[src];
+      Value bottleneck = rem_supply[src];
       bottleneck = std::min(bottleneck, -rem_supply[target]);
       for (const auto& [u, p] : path_edges) {
         bottleneck = std::min(bottleneck, (*flow_adj)[u][p].flow);
       }
 
-      if (bottleneck <= 0) {
+      if (bottleneck <= eps) {
         break;
       }
 
