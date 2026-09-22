@@ -13,6 +13,27 @@ pybind11_add_module(pyemdgrid pyemdgrid.cpp)
 install(TARGETS pyemdgrid DESTINATION .)
 target_link_libraries(pyemdgrid PRIVATE emdgrid)
 
+if(EMDGRID_ORTOOLS_FETCHED_LIB_DIR)
+  # OR-Tools was fetched as a prebuilt release by cmake/GetOrTools.cmake into a
+  # directory under CMAKE_BINARY_DIR. For a normal `cmake --build` that
+  # directory sticks around, and CMake's automatic build-tree RPATH lets
+  # pyemdgrid find libortools.*, absl, protobuf, etc. there. But `pip install`
+  # (scikit-build-core) builds in an ephemeral temp dir that is removed right
+  # after the wheel is produced, and CMake does not propagate that build RPATH
+  # to the installed/packaged module. Without this, the installed wheel fails
+  # to import with e.g. "Library not loaded: @rpath/libortools.9.dylib". Ship
+  # copies of the shared libraries next to the module instead, and point RPATH
+  # at the module's own install directory so the wheel is self-contained.
+  file(GLOB EMDGRID_ORTOOLS_RUNTIME_LIBS
+       "${EMDGRID_ORTOOLS_FETCHED_LIB_DIR}/*${CMAKE_SHARED_LIBRARY_SUFFIX}*")
+  install(FILES ${EMDGRID_ORTOOLS_RUNTIME_LIBS} DESTINATION .)
+  if(APPLE)
+    set_target_properties(pyemdgrid PROPERTIES INSTALL_RPATH "@loader_path")
+  elseif(UNIX)
+    set_target_properties(pyemdgrid PROPERTIES INSTALL_RPATH "$ORIGIN")
+  endif()
+endif()
+
 if(BUILD_TESTING)
   set(PYEMDGRID_TEST_ENV "PYTHONPATH=$<TARGET_FILE_DIR:pyemdgrid>")
 

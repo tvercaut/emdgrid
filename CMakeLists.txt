@@ -48,17 +48,13 @@ find_package(ortools QUIET)
 if(ortools_FOUND OR TARGET ortools OR TARGET ortools::ortools)
   message(STATUS "Found ortools: ${ortools_DIR}")
 else()
-  message(FATAL_ERROR
-    "Could NOT find ortools, which emdgrid requires.\n"
-    "A convenience script is provided to fetch a prebuilt OR-Tools release "
-    "matching this platform:\n"
-    "    python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/get_ortools.py\n"
-    "It extracts the archive under third_party/ and prints the resulting "
-    "directory; pass that to CMake, e.g.\n"
-    "    cmake -B build -DCMAKE_PREFIX_PATH=<printed directory> .\n"
-    "Alternatively install OR-Tools yourself (package manager, conan, or a "
-    "source build) and point CMake at it with -Dortools_DIR=<dir containing "
-    "ortoolsConfig.cmake>.")
+  # No prebuilt OR-Tools was found on CMAKE_PREFIX_PATH: fetch one via
+  # tools/get_ortools.py (see cmake/GetOrTools.cmake) so that a plain
+  # `cmake -B build .` or `pip install .` works without a manual download
+  # step. CI pre-downloads OR-Tools and passes -DCMAKE_PREFIX_PATH itself, so
+  # it never reaches this branch.
+  include(cmake/GetOrTools.cmake)
+  find_package(ortools REQUIRED)
 endif()
 
 if(TARGET ortools AND NOT TARGET ortools::ortools)
