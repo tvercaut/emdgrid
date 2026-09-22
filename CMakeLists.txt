@@ -36,6 +36,7 @@ else()
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG v1.17.0
+    GIT_SHALLOW TRUE
     SYSTEM
   )
   FetchContent_MakeAvailable(spdlog)
@@ -84,6 +85,7 @@ else()
         lemon
         GIT_REPOSITORY https://github.com/The-OpenROAD-Project/lemon-graph
         GIT_TAG e9e3bc6dc0ffeda17eb2d2b4b296a68f03aec00d
+        GIT_SHALLOW TRUE
         SYSTEM
     )
     FetchContent_MakeAvailable(lemon)
